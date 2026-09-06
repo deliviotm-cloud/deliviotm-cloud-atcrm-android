@@ -1,0 +1,10 @@
+* text=auto eol=lf
+*.kt text
+*.kts text
+*.xml text
+*.gradle text
+*.properties text
+*.md text
+*.png binary
+*.jar binary
+*.webp binary

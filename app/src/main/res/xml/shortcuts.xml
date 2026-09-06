@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutId="orders"
+        android:shortcutLongLabel="@string/shortcut_orders"
+        android:shortcutShortLabel="@string/shortcut_orders">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetClass="tm.deliviotm.atcrm.MainActivity"
+            android:targetPackage="tm.deliviotm.atcrm">
+            <extra
+                android:name="atcrm_open_hub"
+                android:value="0" />
+            <extra
+                android:name="atcrm_open_module"
+                android:value="/operations?take=30" />
+        </intent>
+    </shortcut>
+    <shortcut
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutId="chats"
+        android:shortcutLongLabel="@string/shortcut_chats"
+        android:shortcutShortLabel="@string/shortcut_chats">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetClass="tm.deliviotm.atcrm.MainActivity"
+            android:targetPackage="tm.deliviotm.atcrm">
+            <extra
+                android:name="atcrm_open_hub"
+                android:value="1" />
+            <extra
+                android:name="atcrm_open_module"
+                android:value="/workspace/chats" />
+        </intent>
+    </shortcut>
+    <shortcut
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutId="search"
+        android:shortcutLongLabel="@string/shortcut_search"
+        android:shortcutShortLabel="@string/shortcut_search">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetClass="tm.deliviotm.atcrm.MainActivity"
+            android:targetPackage="tm.deliviotm.atcrm">
+            <extra
+                android:name="atcrm_open_hub"
+                android:value="0" />
+            <extra
+                android:name="search"
+                android:value="1" />
+        </intent>
+    </shortcut>
+</shortcuts>

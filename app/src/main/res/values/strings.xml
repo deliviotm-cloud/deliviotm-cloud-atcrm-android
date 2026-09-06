@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">ATCRM</string>
+    <string name="widget_hot_description">Горящие заказы из очереди операций</string>
+    <string name="shortcut_orders">Заказы</string>
+    <string name="shortcut_chats">Чаты</string>
+    <string name="shortcut_search">Поиск</string>
+</resources>

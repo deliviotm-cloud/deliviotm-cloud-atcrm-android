@@ -1,0 +1,36 @@
+# Gradle
+.gradle/
+build/
+**/build/
+.kotlin/
+
+# Android Studio / IDE
+.idea/
+*.iml
+local.properties
+captures/
+.externalNativeBuild/
+.cxx/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets and signing — never commit
+google-services.json
+*.jks
+*.keystore
+keystore.properties
+*.pem
+
+# Build products
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+
+# Misc
+*.log
+.navigation/
+*.hprof
