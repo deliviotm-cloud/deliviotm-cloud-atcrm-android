@@ -8278,7 +8278,7 @@ private fun OperationsWorkspacePane(
             rows = pageData.items
             pendingReview = pack.second.filter { KassaApi.operationStatus(it) == "PENDING_REVIEW" || KassaApi.needsConfirm(it) }
             total = pageData.total
-            cache?.putRows(KassaApi.opsCacheKey(), pageData.items)
+            cache?.putRows(KassaApi.opsCacheKey(), (pendingReview + pageData.items).distinctBy { it.id })
             loaded = true
         } catch (e: Exception) {
             err = e.message

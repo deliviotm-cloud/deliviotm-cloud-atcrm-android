@@ -3,7 +3,7 @@
 Нативное Android-приложение **AT CRM** (`tm.deliviotm.atcrm`).  
 API по умолчанию: `https://crm.deliviotm.com/api`.
 
-Текущая версия в репозитории: **1.6.41** (`versionCode` 201).
+Текущая версия в репозитории: **1.6.42** (`versionCode` 202).
 
 ## Зачем Git
 
