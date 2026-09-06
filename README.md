@@ -1,9 +1,24 @@
-# AT CRM Android
+# AT CRM
 
-Нативное Android-приложение **AT CRM** (`tm.deliviotm.atcrm`).  
+Нативные клиенты **AT CRM**: Android (`app/`) и iOS (`ios/`).  
+Пакет / bundle: `tm.deliviotm.atcrm`.  
 API по умолчанию: `https://crm.deliviotm.com/api`.
 
-Текущая версия в репозитории: **1.6.43** (`versionCode` 203).
+Текущая версия в репозитории: **1.6.43** (`versionCode` / build 203).
+
+## Ссылка для агентов (Android и iOS)
+
+Один Git на обе платформы. iOS-агент клонирует **этот** репозиторий и открывает Xcode-проект здесь же.
+
+```
+https://github.com/deliviotm-cloud/deliviotm-cloud-atcrm-android.git
+```
+
+- Репо: https://github.com/deliviotm-cloud/deliviotm-cloud-atcrm-android
+- iOS / Xcode: [`IOS.md`](IOS.md) · проект [`ios/ATCRM.xcodeproj`](ios/ATCRM.xcodeproj)
+- Манифест: [`.cursor/ios-source.json`](.cursor/ios-source.json)
+
+Новые чаты Cursor открывайте **из этого репозитория**. В GitHub App репо должен быть подключен (он приватный).
 
 ## Зачем Git
 
@@ -24,22 +39,21 @@ APK: `app/build/outputs/apk/debug/ATCRM-<versionName>.apk` (например `AT
 
 Firebase Cloud Messaging в клиент не входит, пока нет `google-services.json` (этот файл в Git не кладём).
 
-## Подключить GitHub (один раз)
-
-Облачный агент Cursor сейчас привязан к публичному `deliviotm-cloud/register` и **не может** создать новый репозиторий сам.
-
-1. На GitHub создайте **приватный** репозиторий `deliviotm-cloud/atcrm-android` (пустой, без README).
-2. В Cursor: GitHub App → добавьте этот репозиторий в установку (иначе агент не сможет пушить).
-3. Затем:
+## iOS / Xcode
 
 ```bash
-cd /path/to/atcrm-android
-git remote add origin git@github.com:deliviotm-cloud/atcrm-android.git
-git push -u origin main
-git push origin v1.6.41
+git clone https://github.com/deliviotm-cloud/deliviotm-cloud-atcrm-android.git
+cd deliviotm-cloud-atcrm-android
+git pull
+open ios/ATCRM.xcodeproj
 ```
 
-Новые чаты Cursor открывайте **из `atcrm-android`**, не из `register`. В `register` Android-код не кладём: репозиторий публичный.
+После правок в Xcode агент коммитит и пушит в этот же remote. Отдельный iOS-репозиторий не нужен.
+
+## GitHub
+
+Репозиторий уже есть и приватный: `deliviotm-cloud/deliviotm-cloud-atcrm-android`.  
+В `register` клиентский код не кладём.
 
 ## Ветки
 

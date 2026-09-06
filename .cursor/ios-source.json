@@ -1,0 +1,28 @@
+{
+  "product": "AT CRM",
+  "purpose": "Canonical Git remote for Cursor iOS agents. Clone this repo, open ios/ATCRM.xcodeproj in Xcode, pull before each update, commit and push after Xcode changes.",
+  "git": {
+    "web": "https://github.com/deliviotm-cloud/deliviotm-cloud-atcrm-android",
+    "https": "https://github.com/deliviotm-cloud/deliviotm-cloud-atcrm-android.git",
+    "ssh": "git@github.com:deliviotm-cloud/deliviotm-cloud-atcrm-android.git",
+    "defaultBranch": "main",
+    "latestWorkingBranch": "cursor/ios-source-cf04"
+  },
+  "apiBase": "https://crm.deliviotm.com/api",
+  "mobileWeb": "https://crm.deliviotm.com",
+  "android": {
+    "applicationId": "tm.deliviotm.atcrm",
+    "versionName": "1.6.43",
+    "versionCode": 203,
+    "path": "app"
+  },
+  "ios": {
+    "path": "ios",
+    "xcodeproj": "ios/ATCRM.xcodeproj",
+    "workspaceHint": "Open ios/ATCRM.xcodeproj in Xcode. No CocoaPods workspace yet.",
+    "bundleId": "tm.deliviotm.atcrm",
+    "displayName": "AT CRM",
+    "marketingVersion": "1.6.43",
+    "buildNumber": "203"
+  }
+}
