@@ -22,8 +22,8 @@ https://github.com/deliviotm-cloud/deliviotm-cloud-atcrm-android.git
 git clone https://github.com/deliviotm-cloud/deliviotm-cloud-atcrm-android.git
 cd deliviotm-cloud-atcrm-android
 git fetch origin
-git checkout cursor/ios-source-cf04   # пока main без этих правок — брать эту ветку
-git pull origin cursor/ios-source-cf04
+git checkout main
+git pull origin main
 open ios/ATCRM.xcodeproj
 ```
 
@@ -35,7 +35,7 @@ git commit -m "Describe the iOS change."
 git push -u origin HEAD
 ```
 
-Версия iOS должна совпадать с Android в `.cursor/ios-source.json`: сейчас **1.6.43** (build **203**).
+Версия iOS должна совпадать с Android в `.cursor/ios-source.json`: сейчас **1.6.44** (build **204**).
 
 API: `https://crm.deliviotm.com/api`  
 Ориентир UI: мобильный сайт `https://crm.deliviotm.com` и Android-код в `app/`.

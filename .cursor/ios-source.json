@@ -6,7 +6,7 @@
     "https": "https://github.com/deliviotm-cloud/deliviotm-cloud-atcrm-android.git",
     "ssh": "git@github.com:deliviotm-cloud/deliviotm-cloud-atcrm-android.git",
     "defaultBranch": "main",
-    "latestWorkingBranch": "cursor/ios-source-cf04"
+    "latestWorkingBranch": "main"
   },
   "apiBase": "https://crm.deliviotm.com/api",
   "mobileWeb": "https://crm.deliviotm.com",
