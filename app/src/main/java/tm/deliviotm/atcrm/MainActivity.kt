@@ -8176,7 +8176,7 @@ private fun OperationsWorkspacePane(
         mutableStateOf(prefs.getString("ops_from", "").orEmpty().ifBlank { java.time.LocalDate.now().minusDays(7).toString() })
     }
     var dateTo by remember { mutableStateOf(prefs.getString("ops_to", "").orEmpty().ifBlank { today }) }
-    var status by remember { mutableStateOf("CREATED") }
+    var status by remember { mutableStateOf(prefs.getString("ops_status", "ALL").orEmpty().ifBlank { "ALL" }) }
     var pay by remember { mutableStateOf("ALL") }
     var estType by remember { mutableStateOf("ALL") }
     var cityKey by remember { mutableStateOf("") }
@@ -8187,6 +8187,7 @@ private fun OperationsWorkspacePane(
     var page by remember { mutableIntStateOf(1) }
     var pageSize by remember { mutableIntStateOf(50) }
     var rows by remember { mutableStateOf<List<JsonRow>>(emptyList()) }
+    var pendingReview by remember { mutableStateOf<List<JsonRow>>(emptyList()) }
     var total by remember { mutableIntStateOf(0) }
     var cities by remember { mutableStateOf(listOf(DashCity("", "Все города"))) }
     var err by remember { mutableStateOf<String?>(null) }
@@ -8219,8 +8220,13 @@ private fun OperationsWorkspacePane(
         page = 1
     }
 
-    LaunchedEffect(preset, dateFrom, dateTo) {
-        prefs.edit().putString("ops_preset", preset).putString("ops_from", dateFrom).putString("ops_to", dateTo).apply()
+    LaunchedEffect(preset, dateFrom, dateTo, status) {
+        prefs.edit()
+            .putString("ops_preset", preset)
+            .putString("ops_from", dateFrom)
+            .putString("ops_to", dateTo)
+            .putString("ops_status", status)
+            .apply()
     }
 
     LaunchedEffect(token) {
@@ -8241,14 +8247,36 @@ private fun OperationsWorkspacePane(
         err = null
         if (loaded) refreshing = true
         try {
-            val raw = withContext(Dispatchers.IO) {
-                api.getObject(
+            val pack = withContext(Dispatchers.IO) {
+                val raw = api.getObject(
                     KassaApi.operationsQuery(dateFrom, dateTo, status, page, pageSize, pay, estType, q, cityKey, sortBy, sortDir),
                     token,
                 )
+                val pending = if (status == "CANCELLED") {
+                    emptyList()
+                } else {
+                    runCatching {
+                        api.getRows(
+                            KassaApi.operationsQuery(
+                                java.time.LocalDate.now().minusDays(30).toString(),
+                                java.time.LocalDate.now().toString(),
+                                "PENDING_REVIEW",
+                                1,
+                                200,
+                                pay,
+                                estType,
+                                q,
+                                cityKey,
+                            ),
+                            token,
+                        )
+                    }.getOrDefault(emptyList())
+                }
+                raw to pending
             }
-            val pageData = KassaApi.pagedRows(raw)
+            val pageData = KassaApi.pagedRows(pack.first)
             rows = pageData.items
+            pendingReview = pack.second.filter { KassaApi.operationStatus(it) == "PENDING_REVIEW" || KassaApi.needsConfirm(it) }
             total = pageData.total
             cache?.putRows(KassaApi.opsCacheKey(), pageData.items)
             loaded = true
@@ -8307,6 +8335,14 @@ private fun OperationsWorkspacePane(
 
     val pages = ((total + pageSize - 1) / pageSize).coerceAtLeast(1)
     val safePage = page.coerceIn(1, pages)
+    val pendingIds = remember(pendingReview) { pendingReview.map { it.id }.filter { it.isNotBlank() }.toSet() }
+    val pinnedPending = remember(pendingReview, status) {
+        if (status == "CANCELLED") emptyList() else pendingReview
+    }
+    val listRows = remember(rows, pendingIds, status) {
+        if (status == "PENDING_REVIEW") rows
+        else rows.filter { it.id.isBlank() || it.id !in pendingIds }
+    }
 
     fun pendingFor(row: JsonRow): JsonRow? {
         val num = KassaApi.orderNo(row.raw)
@@ -8372,13 +8408,14 @@ private fun OperationsWorkspacePane(
                             val cancelledN = rows.count { KassaApi.operationStatus(it) == "CANCELLED" }
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 SiteMiniStat("всего", total.toString(), Modifier.weight(1f))
-                                SiteMiniStat("стр. $safePage/$pages", rows.size.toString(), Modifier.weight(1f))
+                                SiteMiniStat("на проверке", pendingReview.size.toString(), Modifier.weight(1f))
                                 SiteMiniStat("подтвержд.", confirmedN.toString(), Modifier.weight(1f))
                                 SiteMiniStat("отмены", cancelledN.toString(), Modifier.weight(1f))
                             }
                         }
                         item {
                             val statusLabel = when (status) {
+                                "PENDING_REVIEW" -> "На проверке"
                                 "CREATED" -> "Подтверждённые"
                                 "CANCELLED" -> "Отменённые"
                                 else -> "Все заказы"
@@ -8417,7 +8454,12 @@ private fun OperationsWorkspacePane(
                                     )
                                     SiteFilterSelect(
                                         value = status,
-                                        items = listOf("CREATED" to "Подтверждённые", "CANCELLED" to "Отменённые", "ALL" to "Все заказы"),
+                                        items = listOf(
+                                            "ALL" to "Все заказы",
+                                            "PENDING_REVIEW" to "На проверке",
+                                            "CREATED" to "Подтверждённые",
+                                            "CANCELLED" to "Отменённые",
+                                        ),
                                         onChange = { status = it; page = 1 },
                                         label = "Статус",
                                     )
@@ -8455,7 +8497,7 @@ private fun OperationsWorkspacePane(
                                         InlineActionChip("Сброс") {
                                             qDraft = ""
                                             q = ""
-                                            status = "CREATED"
+                                            status = "ALL"
                                             pay = "ALL"
                                             estType = "ALL"
                                             cityKey = ""
@@ -8489,7 +8531,7 @@ private fun OperationsWorkspacePane(
                         }
                         if (!loaded && err == null) {
                             item { LoadingCard() }
-                        } else if (rows.isEmpty()) {
+                        } else if (listRows.isEmpty() && pinnedPending.isEmpty()) {
                             item {
                                 EmptyStateCard(
                                     "Нет операций за выбранный период. Расширьте «Дату с / по» или сбросьте поиск.",
@@ -8497,7 +8539,31 @@ private fun OperationsWorkspacePane(
                                 )
                             }
                         } else {
-                            items(rows, key = { it.id }) { row ->
+                            if (pinnedPending.isNotEmpty() && status != "PENDING_REVIEW") {
+                                item {
+                                    Text(
+                                        "На проверке · ${pinnedPending.size}",
+                                        color = AtColors.text,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 16.sp,
+                                    )
+                                }
+                                items(pinnedPending, key = { "pending-${it.id}" }) { row ->
+                                    OpsOrderCard(row = row, onOpen = { onOpenOp(row) })
+                                }
+                                if (listRows.isNotEmpty()) {
+                                    item {
+                                        Text(
+                                            if (status == "CREATED") "Подтверждённые" else "Остальные заказы",
+                                            color = AtColors.text,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 16.sp,
+                                            modifier = Modifier.padding(top = 6.dp),
+                                        )
+                                    }
+                                }
+                            }
+                            items(listRows, key = { it.id }) { row ->
                                 OpsOrderCard(row = row, onOpen = { onOpenOp(row) })
                             }
                             item {
