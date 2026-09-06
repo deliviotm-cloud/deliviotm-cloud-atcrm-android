@@ -3,12 +3,25 @@
 Нативное Android-приложение **AT CRM** (`tm.deliviotm.atcrm`).  
 API по умолчанию: `https://crm.deliviotm.com/api`.
 
-Текущая версия в репозитории: **1.6.41** (`versionCode` 201).
+Текущая версия в Git: **1.6.41** (`versionCode` 201), тег `v1.6.41`.
 
-## Зачем Git
+Репозиторий: [deliviotm-cloud/deliviotm-cloud-atcrm-android](https://github.com/deliviotm-cloud/deliviotm-cloud-atcrm-android) (приватный).
 
-Раньше исходники жили только в `/tmp` облачного агента и пропадали после сброса машины.  
-Этот репозиторий — постоянная копия кода. Сборки APK можно хранить отдельно, но **источник правды — Git**.
+## Git — источник правды
+
+Исходники живут в этом репозитории, не на диске облачной VM. После любой правки агент **сам** делает commit и push. Не оставлять изменения только локально и не просить пользователя пушить вручную.
+
+```bash
+git checkout -b cursor/<краткое-имя>-cf04
+# …правки…
+git add -A
+git commit -m "…"
+git push -u origin HEAD
+```
+
+Дальше — PR в `main`. Стабильная сборка, которую можно ставить, только на `main`.
+
+Новые чаты Cursor открывайте из **этого** репозитория.
 
 ## Сборка
 
@@ -22,26 +35,4 @@ echo "sdk.dir=$ANDROID_HOME" > local.properties
 
 APK: `app/build/outputs/apk/debug/app-debug.apk`.
 
-Firebase Cloud Messaging в клиент не входит, пока нет `google-services.json` (этот файл в Git не кладём).
-
-## Подключить GitHub (один раз)
-
-Облачный агент Cursor сейчас привязан к публичному `deliviotm-cloud/register` и **не может** создать новый репозиторий сам.
-
-1. На GitHub создайте **приватный** репозиторий `deliviotm-cloud/atcrm-android` (пустой, без README).
-2. В Cursor: GitHub App → добавьте этот репозиторий в установку (иначе агент не сможет пушить).
-3. Затем:
-
-```bash
-cd /path/to/atcrm-android
-git remote add origin git@github.com:deliviotm-cloud/atcrm-android.git
-git push -u origin main
-git push origin v1.6.41
-```
-
-Новые чаты Cursor открывайте **из `atcrm-android`**, не из `register`. В `register` Android-код не кладём: репозиторий публичный.
-
-## Ветки
-
-- `main` — стабильная сборка, которую можно ставить.
-- Правки агента: `cursor/<краткое-имя>-e295`.
+`local.properties` и `google-services.json` в Git не кладём. Firebase Cloud Messaging в клиент не входит, пока нет `google-services.json`.
