@@ -422,10 +422,12 @@ internal fun SitePulseCard(
     val light = LocalAtPalette.current.bgDeep.red > 0.5f
     val (fill, edge) = pulseTint(metric.tint.ifBlank { pulseTintKey(metric.label) }, light)
     val delta = metric.delta.trim()
+    val hint = metric.hint.trim()
     val deltaLine = when {
-        delta.isBlank() -> metric.hint.ifBlank { "за период" }
+        hint.contains("к прошлому") || hint.contains("комиссия") -> hint
+        delta.isBlank() -> hint.ifBlank { "за период" }
         delta.contains("прошл", ignoreCase = true) -> delta
-        else -> "$delta к прошлому периоду"
+        else -> "$delta к прошлому"
     }
     Column(
         modifier
@@ -433,11 +435,11 @@ internal fun SitePulseCard(
             .clip(RoundedCornerShape(12.dp))
             .background(fill)
             .border(1.dp, edge.copy(alpha = 0.35f), RoundedCornerShape(12.dp))
-            .padding(horizontal = 10.dp, vertical = 8.dp),
+            .padding(horizontal = 12.dp, vertical = 10.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (metric.icon.isNotBlank()) {
-                Text(metric.icon, fontSize = 12.sp, modifier = Modifier.padding(end = 4.dp))
+                Text(metric.icon, fontSize = 13.sp, modifier = Modifier.padding(end = 4.dp))
             }
             Text(
                 metric.label,
@@ -451,18 +453,18 @@ internal fun SitePulseCard(
         Text(
             metric.value,
             color = AtColors.text,
-            fontSize = 15.sp,
+            fontSize = 20.sp,
             fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(top = 4.dp),
+            modifier = Modifier.padding(top = 6.dp),
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
         if (metric.extra.isNotBlank()) {
             Text(
                 metric.extra,
-                color = AtColors.muted,
-                fontSize = 10.sp,
-                modifier = Modifier.padding(top = 2.dp),
+                color = AtColors.accent,
+                fontSize = 11.sp,
+                modifier = Modifier.padding(top = 3.dp),
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -470,9 +472,9 @@ internal fun SitePulseCard(
         Text(
             deltaLine,
             color = if (delta.isNotBlank()) deltaColor(delta, metric.invertDelta) else AtColors.muted,
-            fontSize = 10.sp,
+            fontSize = 11.sp,
             fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.padding(top = 3.dp),
+            modifier = Modifier.padding(top = 4.dp),
             maxLines = 2,
             overflow = TextOverflow.Clip,
         )
