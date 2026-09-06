@@ -1951,7 +1951,7 @@ private fun HomePane(
                 item {
                     SiteSectionHead(
                         title = "Dashboard",
-                        hint = "Те же KPI, динамика, топ точек и скачивания, что на сайте. Листайте вниз.",
+                        hint = "Пульс доставки за период — те же цифры, что в аналитике отчётов",
                     )
                 }
                 item {
@@ -2212,7 +2212,7 @@ private fun AnalyticsBody(
             onApplyCustom = onPeriodCustom,
         )
         Text(
-            "Полный отчёт · ${snap.rangeLabel.ifBlank { KassaApi.periodRangeLabel(period, customFrom, customTo) }}",
+            "Полный отчёт",
             color = AtColors.accent,
             fontSize = 13.sp,
             fontWeight = FontWeight.SemiBold,
@@ -2829,14 +2829,23 @@ private suspend fun buildHomeSnapshot(
             val downloadSeries = KassaApi.parseDownloadSeries(storeAll.takeIf { it.length() > 0 } ?: storeCur)
             val pulse = buildList {
                 addAll(pulseCore)
-                if (review.isNotEmpty() && none { it.label.contains("проверк", true) }) {
-                    add(PulseMetric("На проверке", review.size.toString(), "подтвердить", "⏳", tint = "blue"))
-                }
-                if (prob.isNotEmpty() && none { it.label.contains("проблем", true) }) {
-                    add(PulseMetric("Проблемные", prob.size.toString(), "нужно разобрать", "⚠", tint = "violet"))
-                }
-                if (overdue > 0 && none { it.label.contains("задач", true) }) {
-                    add(PulseMetric("Просроченные задачи", overdue.toString(), "в работе", "✓", tint = "peach"))
+                val storeTotals = storeCur.optJSONObject("totals") ?: storeCur
+                val prevStoreTotals = storePrev.optJSONObject("totals") ?: storePrev
+                val dlTotal = KassaApi.jsonNum(storeTotals, "total", "downloads")
+                if (dlTotal > 0 || downloads.isNotEmpty()) {
+                    val prevTotal = KassaApi.jsonNum(prevStoreTotals, "total", "downloads")
+                    val raw = KassaApi.vsPrev(dlTotal, prevTotal)
+                    val line = if (raw.isNotBlank()) "$rangeLabel · $raw к прошлому" else rangeLabel
+                    add(
+                        PulseMetric(
+                            "Скачивания",
+                            KassaApi.prettyNumber(dlTotal.toLong().toString()).ifBlank { "0" },
+                            line,
+                            "📲",
+                            raw,
+                            tint = "blue",
+                        ),
+                    )
                 }
             }
             val dynamics = KassaApi.buildDynamics(cur, prev.takeIf { it.length() > 0 }, from, to, prevFrom, prevTo)
