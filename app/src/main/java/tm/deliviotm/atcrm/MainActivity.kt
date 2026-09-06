@@ -2220,8 +2220,10 @@ private fun AnalyticsBody(
         )
         pulse.chunked(2).forEach { pair ->
             Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                Modifier
+                    .fillMaxWidth()
+                    .height(IntrinsicSize.Min),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 pair.forEach { metric -> SitePulseCard(metric, Modifier.weight(1f)) }
                 if (pair.size == 1) Spacer(Modifier.weight(1f))
@@ -11613,7 +11615,12 @@ private fun AiMdRichText(text: String, size: androidx.compose.ui.unit.TextUnit, 
 internal fun ReportKpiGrid(metrics: List<PulseMetric>) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         metrics.chunked(2).forEach { pair ->
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .height(IntrinsicSize.Min),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
                 pair.forEach { metric -> SitePulseCard(metric, Modifier.weight(1f)) }
                 if (pair.size == 1) Spacer(Modifier.weight(1f))
             }

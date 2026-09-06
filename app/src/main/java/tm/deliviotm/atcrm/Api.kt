@@ -1187,15 +1187,8 @@ class KassaApi(private val baseUrl: String) {
         fun pulseFromAnalytics(cur: JSONObject, prev: JSONObject?, hint: String): List<PulseMetric> {
             val c = analyticsTotals(cur)
             val p = prev?.let { analyticsTotals(it) }
-            fun footer(current: Double, previous: Double, profit: Boolean = false): Pair<String, String> {
-                val raw = vsPrev(current, previous)
-                val line = when {
-                    profit && raw.isNotBlank() -> "комиссия · $raw к прошлому"
-                    profit -> "комиссия"
-                    raw.isNotBlank() -> "$hint · $raw к прошлому"
-                    else -> hint
-                }
-                return raw to line
+            fun footer(current: Double, previous: Double): Pair<String, String> {
+                return vsPrev(current, previous) to hint
             }
             fun countTile(label: String, icon: String, invert: Boolean, tint: String, vararg keys: String): PulseMetric {
                 val n = jsonNum(c, *keys)
@@ -1211,7 +1204,7 @@ class KassaApi(private val baseUrl: String) {
                 vararg keys: String,
             ): PulseMetric {
                 val n = jsonNum(c, *keys)
-                val (raw, line) = footer(n, jsonNum(p, *keys), profit)
+                val (raw, line) = footer(n, jsonNum(p, *keys))
                 return PulseMetric(label, tmt(n), line, icon, raw, extra, false, tint)
             }
             val gross = jsonNumOpt(c, "profitBeforeDeductions", "grossProfit", "profitGross")

@@ -419,65 +419,123 @@ internal fun SitePulseCard(
     metric: PulseMetric,
     modifier: Modifier = Modifier,
 ) {
-    val light = LocalAtPalette.current.bgDeep.red > 0.5f
-    val (fill, edge) = pulseTint(metric.tint.ifBlank { pulseTintKey(metric.label) }, light)
-    val delta = metric.delta.trim()
-    val hint = metric.hint.trim()
-    val deltaLine = when {
-        hint.contains("к прошлому") || hint.contains("комиссия") -> hint
-        delta.isBlank() -> hint.ifBlank { "за период" }
-        delta.contains("прошл", ignoreCase = true) -> delta
-        else -> "$delta к прошлому"
+    val palette = LocalAtPalette.current
+    val light = !palette.isDark
+    val tintKey = metric.tint.ifBlank { pulseTintKey(metric.label) }
+    val accent = pulseAccent(tintKey)
+    val iconWash = if (light) pulseWash(tintKey) else accent.copy(alpha = 0.18f)
+    val (period, deltaRaw) = pulseFooterParts(metric)
+    val profit = metric.label.contains("прибыл", ignoreCase = true) ||
+        metric.extra.contains("валовая", ignoreCase = true)
+    val deltaTone = if (deltaRaw.isNotBlank()) deltaColor(deltaRaw, metric.invertDelta) else palette.muted
+    val shape = RoundedCornerShape(16.dp)
+    val extraBits = metric.extra.split(": ", limit = 2)
+    val valueSize = when {
+        metric.value.length > 18 -> 16.sp
+        metric.value.length > 14 -> 18.sp
+        else -> 22.sp
     }
     Column(
         modifier
-            .shadow(2.dp, RoundedCornerShape(12.dp), clip = false, ambientColor = Color(0x080F172A), spotColor = Color(0x0D0F172A))
-            .clip(RoundedCornerShape(12.dp))
-            .background(fill)
-            .border(1.dp, edge.copy(alpha = 0.35f), RoundedCornerShape(12.dp))
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            .fillMaxHeight()
+            .heightIn(min = 152.dp)
+            .shadow(
+                elevation = if (light) 6.dp else 0.dp,
+                shape = shape,
+                clip = false,
+                ambientColor = Color(0x140F172A),
+                spotColor = Color(0x1A0F172A),
+            )
+            .clip(shape)
+            .background(if (light) Color.White else palette.panel)
+            .border(1.dp, accent.copy(alpha = if (light) 0.32f else 0.42f), shape)
+            .padding(horizontal = 14.dp, vertical = 13.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            if (metric.icon.isNotBlank()) {
-                Text(metric.icon, fontSize = 13.sp, modifier = Modifier.padding(end = 4.dp))
+            Box(
+                Modifier
+                    .size(30.dp)
+                    .clip(RoundedCornerShape(9.dp))
+                    .background(iconWash),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(metric.icon.ifBlank { "•" }, fontSize = 14.sp)
             }
+            Spacer(Modifier.width(8.dp))
             Text(
                 metric.label,
-                color = AtColors.muted,
-                fontSize = 11.sp,
+                color = palette.muted,
+                fontSize = 12.sp,
                 fontWeight = FontWeight.Medium,
+                lineHeight = 15.sp,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
             )
         }
         Text(
             metric.value,
-            color = AtColors.text,
-            fontSize = 20.sp,
+            color = palette.text,
+            fontSize = valueSize,
             fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(top = 6.dp),
-            maxLines = 2,
+            letterSpacing = (-0.3).sp,
+            lineHeight = 26.sp,
+            maxLines = 1,
             overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(top = 10.dp),
         )
         if (metric.extra.isNotBlank()) {
             Text(
-                metric.extra,
-                color = AtColors.muted,
+                extraBits[0],
+                color = palette.muted,
                 fontSize = 11.sp,
-                modifier = Modifier.padding(top = 3.dp),
-                maxLines = 2,
+                lineHeight = 14.sp,
+                modifier = Modifier.padding(top = 6.dp),
+            )
+            if (extraBits.size > 1) {
+                Text(
+                    extraBits[1],
+                    color = palette.text.copy(alpha = 0.82f),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        Spacer(Modifier.weight(1f))
+        if (profit) {
+            Text("комиссия", color = palette.muted, fontSize = 11.sp, lineHeight = 14.sp)
+            if (deltaRaw.isNotBlank()) {
+                Text(
+                    "$deltaRaw к прошлому",
+                    color = deltaTone,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    lineHeight = 14.sp,
+                )
+            }
+        } else {
+            if (period.isNotBlank()) {
+                Text(
+                    period,
+                    color = palette.muted,
+                    fontSize = 11.sp,
+                    lineHeight = 14.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Text(
+                if (deltaRaw.isNotBlank()) "$deltaRaw к прошлому" else "за период",
+                color = if (deltaRaw.isNotBlank()) deltaTone else palette.muted,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                lineHeight = 14.sp,
+                maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        Text(
-            deltaLine,
-            color = if (delta.isNotBlank()) deltaColor(delta, metric.invertDelta) else AtColors.muted,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.padding(top = 4.dp),
-            maxLines = 2,
-            overflow = TextOverflow.Clip,
-        )
     }
 }
 
@@ -762,18 +820,37 @@ internal fun deltaColor(delta: String, invert: Boolean = false): Color {
     }
 }
 
-private fun pulseTint(key: String, light: Boolean): Pair<Color, Color> {
-    val (fill, edge) = when (key) {
-        "mint" -> Color(0xFFE7F8EF) to Color(0xFF34D399)
-        "teal" -> Color(0xFFE6F6F5) to Color(0xFF2DD4BF)
-        "violet" -> Color(0xFFF0E9FF) to Color(0xFFA78BFA)
-        "blue" -> Color(0xFFE7F0FF) to Color(0xFF60A5FA)
-        "lavender" -> Color(0xFFEEE8FF) to Color(0xFF8B7CFF)
-        "peach" -> Color(0xFFFFF0E8) to Color(0xFFFB923C)
-        "ink" -> Color(0xFFEEF1F6) to Color(0xFF111827)
-        else -> Color(0xFFE8F3FF) to Color(0xFF38BDF8)
-    }
-    return if (light) fill to edge else edge.copy(alpha = 0.16f) to edge
+private fun pulseAccent(key: String): Color = when (key) {
+    "mint" -> Color(0xFF34D399)
+    "teal" -> Color(0xFF2DD4BF)
+    "violet" -> Color(0xFFA78BFA)
+    "blue" -> Color(0xFF60A5FA)
+    "lavender" -> Color(0xFF8B7CFF)
+    "peach" -> Color(0xFFFB923C)
+    "ink" -> Color(0xFF94A3B8)
+    else -> Color(0xFF38BDF8)
+}
+
+private fun pulseWash(key: String): Color = when (key) {
+    "mint" -> Color(0xFFE7F8EF)
+    "teal" -> Color(0xFFE6F6F5)
+    "violet" -> Color(0xFFF3EDFF)
+    "blue" -> Color(0xFFE7F0FF)
+    "lavender" -> Color(0xFFEEE8FF)
+    "peach" -> Color(0xFFFFF1E8)
+    "ink" -> Color(0xFFEEF1F6)
+    else -> Color(0xFFE8F3FF)
+}
+
+internal fun pulseFooterParts(metric: PulseMetric): Pair<String, String> {
+    val delta = metric.delta.trim()
+    var period = metric.hint.trim()
+        .replace(Regex("""комиссия\s*·\s*"""), "")
+        .replace(Regex("""\s*·\s*[+\-]?\d+%\s*к прошлому.*"""), "")
+        .replace(Regex("""[+\-]?\d+%\s*к прошлому.*"""), "")
+        .trim()
+    if (period.equals("комиссия", ignoreCase = true)) period = ""
+    return period to delta
 }
 
 @Composable

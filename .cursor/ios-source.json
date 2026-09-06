@@ -12,8 +12,8 @@
   "mobileWeb": "https://crm.deliviotm.com",
   "android": {
     "applicationId": "tm.deliviotm.atcrm",
-    "versionName": "1.6.43",
-    "versionCode": 203,
+    "versionName": "1.6.44",
+    "versionCode": 204,
     "path": "app"
   },
   "ios": {
@@ -22,7 +22,7 @@
     "workspaceHint": "Open ios/ATCRM.xcodeproj in Xcode. No CocoaPods workspace yet.",
     "bundleId": "tm.deliviotm.atcrm",
     "displayName": "AT CRM",
-    "marketingVersion": "1.6.43",
-    "buildNumber": "203"
+    "marketingVersion": "1.6.44",
+    "buildNumber": "204"
   }
 }
