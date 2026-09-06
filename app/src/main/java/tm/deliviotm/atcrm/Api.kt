@@ -1187,45 +1187,43 @@ class KassaApi(private val baseUrl: String) {
         fun pulseFromAnalytics(cur: JSONObject, prev: JSONObject?, hint: String): List<PulseMetric> {
             val c = analyticsTotals(cur)
             val p = prev?.let { analyticsTotals(it) }
-            fun metric(
+            fun footer(current: Double, previous: Double, profit: Boolean = false): Pair<String, String> {
+                val raw = vsPrev(current, previous)
+                val line = when {
+                    profit && raw.isNotBlank() -> "комиссия · $raw к прошлому"
+                    profit -> "комиссия"
+                    raw.isNotBlank() -> "$hint · $raw к прошлому"
+                    else -> hint
+                }
+                return raw to line
+            }
+            fun countTile(label: String, icon: String, invert: Boolean, tint: String, key: String): PulseMetric {
+                val n = jsonNum(c, key)
+                val (raw, line) = footer(n, jsonNum(p, key))
+                return PulseMetric(label, prettyNumber(n.toLong().toString()).ifBlank { "0" }, line, icon, raw, "", invert, tint)
+            }
+            fun moneyTile(
                 label: String,
                 icon: String,
-                money: Boolean,
+                tint: String,
+                key: String,
                 extra: String = "",
-                invert: Boolean = false,
-                tint: String = "",
-                vararg keys: String,
+                profit: Boolean = false,
             ): PulseMetric {
-                val n = jsonNum(c, *keys)
-                val shown = if (money) "${prettyNumber(n.toString())} TMT" else prettyNumber(n.toString())
-                val delta = vsPrev(n, jsonNum(p, *keys))
-                return PulseMetric(label, shown.ifBlank { "0" }, hint, icon, delta, extra, invert, tint)
+                val n = jsonNum(c, key)
+                val (raw, line) = footer(n, jsonNum(p, key), profit)
+                return PulseMetric(label, tmt(n), line, icon, raw, extra, false, tint)
             }
-            val gross = jsonNum(c, "grossProfit", "gross", "profitGross")
-            val commission = jsonNum(c, "commission", "commissionAmount", "platformCommission", "fee", "commissionTotal")
-            val cancelled = jsonNum(c, "cancelledCount", "cancelledOrders", "canceledCount", "cancelled")
-            val pending = jsonNum(c, "pendingReviewCount", "pendingCount", "onReviewCount")
-            val profitBits = buildList {
-                if (commission != 0.0) add("комиссия ${prettyNumber(commission.toString())} TMT")
-                if (gross > 0) add("валовая ${prettyNumber(gross.toString())} TMT")
-            }.joinToString(" · ")
-            return buildList {
-                add(metric("Заказы", "📦", false, "", false, "mint", "ordersCount", "orders"))
-                add(metric("Оборот без доставки", "💰", true, "", false, "teal", "turnover", "revenue", "turnoverWithoutDelivery"))
-                add(metric("Сумма доставок", "🚚", true, "", false, "violet", "deliveryTotal", "deliveryAmount", "deliverySum"))
-                add(metric("Бесплатные доставки", "🎁", false, "", true, "blue", "freeDeliveryCount", "freeDeliveries"))
-                add(metric("Средний чек", "🧾", true, "", false, "lavender", "avgCheck", "averageCheck", "aov"))
-                add(metric("Чистая прибыль", "📈", true, profitBits, false, "peach", "profit", "netProfit"))
-                if (commission != 0.0) {
-                    add(metric("Комиссия", "٪", true, "", false, "peach", "commission", "commissionAmount", "platformCommission", "fee", "commissionTotal"))
-                }
-                if (cancelled > 0) {
-                    add(metric("Отмены", "✕", false, "", true, "violet", "cancelledCount", "cancelledOrders", "canceledCount", "cancelled"))
-                }
-                if (pending > 0) {
-                    add(metric("На проверке", "⏳", false, "подтвердить", false, "blue", "pendingReviewCount", "pendingCount", "onReviewCount"))
-                }
-            }
+            val gross = jsonNumOpt(c, "profitBeforeDeductions")
+            val profitExtra = if (gross != null) "валовая прибыль: ${tmt(gross)}" else ""
+            return listOf(
+                countTile("Заказы", "📦", false, "mint", "ordersCount"),
+                moneyTile("Оборот (без доставки)", "💰", "teal", "turnover"),
+                moneyTile("Сумма доставок", "🚚", "violet", "deliveryTotal"),
+                countTile("Бесплатные доставки", "🎁", true, "blue", "freeDeliveryCount"),
+                moneyTile("Средний чек", "🧾", "lavender", "avgCheck"),
+                moneyTile("Чистая прибыль", "📈", "peach", "profit", profitExtra, true),
+            )
         }
 
         fun downloadsFromStats(cur: JSONObject?, prev: JSONObject?, hint: String): List<PulseMetric> {
@@ -2469,37 +2467,28 @@ class KassaApi(private val baseUrl: String) {
         }
 
         fun parseReportPulse(o: JSONObject, hint: String): List<PulseMetric> {
-            val cur = o.optJSONObject("current") ?: o.optJSONObject("summary") ?: o
-            fun num(vararg keys: String): String {
-                for (k in keys) {
-                    if (!cur.has(k) || cur.isNull(k)) continue
-                    val n = prettyNumber(cur.opt(k)?.toString().orEmpty())
-                    if (n.isNotBlank()) return n
-                }
-                return ""
-            }
-            fun money(raw: String): String = if (raw.isBlank()) "" else "$raw TMT"
+            val cur = o.optJSONObject("totals") ?: o.optJSONObject("current") ?: o.optJSONObject("summary") ?: o
             val range = periodRangeLabel(
                 when {
                     hint.contains("7") -> "7d"
                     hint.contains("30") -> "30d"
                     else -> "month"
                 },
-            )
-            val sub = range.ifBlank { hint }
-            val orders = num("ordersCount", "orders")
-            val turnover = money(num("turnover", "revenue", "turnoverWithoutDelivery"))
-            val delivery = money(num("deliveryAmount", "deliverySum", "deliveryFee"))
-            val free = num("freeDeliveries", "freeDeliveryCount")
-            val avg = money(num("avgCheck", "averageCheck", "aov"))
-            val profit = money(num("profit", "netProfit"))
-            return listOfNotNull(
-                orders.takeIf { it.isNotBlank() }?.let { PulseMetric("Заказы", it, sub, "📦") },
-                turnover.takeIf { it.isNotBlank() }?.let { PulseMetric("Оборот без доставки", it, sub, "💰") },
-                delivery.takeIf { it.isNotBlank() }?.let { PulseMetric("Сумма доставки", it, sub, "🚚") },
-                free.takeIf { it.isNotBlank() }?.let { PulseMetric("Бесплатные доставки", it, sub, "🎁") },
-                avg.takeIf { it.isNotBlank() }?.let { PulseMetric("Средний чек", it, sub, "🧾") },
-                profit.takeIf { it.isNotBlank() }?.let { PulseMetric("Чистая прибыль", it, sub, "📈") },
+            ).ifBlank { hint }
+            val gross = jsonNumOpt(cur, "profitBeforeDeductions")
+            return listOf(
+                PulseMetric("Заказы", prettyNumber(jsonNum(cur, "ordersCount").toLong().toString()).ifBlank { "0" }, range, "📦"),
+                PulseMetric("Оборот (без доставки)", tmt(jsonNum(cur, "turnover")), range, "💰"),
+                PulseMetric("Сумма доставок", tmt(jsonNum(cur, "deliveryTotal")), range, "🚚"),
+                PulseMetric("Бесплатные доставки", prettyNumber(jsonNum(cur, "freeDeliveryCount").toLong().toString()).ifBlank { "0" }, range, "🎁", invertDelta = true),
+                PulseMetric("Средний чек", tmt(jsonNum(cur, "avgCheck")), range, "🧾"),
+                PulseMetric(
+                    "Чистая прибыль",
+                    tmt(jsonNum(cur, "profit")),
+                    range,
+                    "📈",
+                    extra = if (gross != null) "валовая прибыль: ${tmt(gross)}" else "",
+                ),
             )
         }
 
