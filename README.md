@@ -20,7 +20,7 @@ echo "sdk.dir=$ANDROID_HOME" > local.properties
 ./gradlew assembleDebug
 ```
 
-APK: `app/build/outputs/apk/debug/app-debug.apk`.
+APK: `app/build/outputs/apk/debug/ATCRM-<versionName>.apk` (например `ATCRM-1.6.42.apk`).
 
 Firebase Cloud Messaging в клиент не входит, пока нет `google-services.json` (этот файл в Git не кладём).
 
