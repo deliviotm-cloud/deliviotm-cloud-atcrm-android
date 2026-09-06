@@ -23,6 +23,13 @@ google-services.json
 keystore.properties
 *.pem
 
+# Xcode (iOS agent)
+ios/xcuserdata/
+**/xcuserdata/
+DerivedData/
+*.xcuserstate
+*.ipa
+
 # Build products
 *.apk
 *.aab
