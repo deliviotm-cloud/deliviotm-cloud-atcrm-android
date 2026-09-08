@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.padding
@@ -55,7 +54,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -447,21 +449,29 @@ private fun CountBadge(
     modifier: Modifier = Modifier,
 ) {
     if (count <= 0) return
-    val min = if (compact) 16.dp else 22.dp
+    val side = if (compact) 16.dp else 22.dp
     Box(
         modifier
-            .defaultMinSize(minWidth = min, minHeight = min)
-            .background(AtColors.danger, CircleShape)
-            .padding(horizontal = if (count > 9) 4.dp else 0.dp),
+            .size(side)
+            .clip(CircleShape)
+            .background(AtColors.danger),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             if (count > 99) "99+" else count.toString(),
             color = Color.White,
-            fontSize = if (compact) 9.sp else 11.sp,
+            fontSize = if (compact) 8.sp else 11.sp,
             fontWeight = FontWeight.Bold,
             textAlign = TextAlign.Center,
             maxLines = 1,
+            lineHeight = if (compact) 8.sp else 11.sp,
+            style = TextStyle(
+                platformStyle = PlatformTextStyle(includeFontPadding = false),
+                lineHeightStyle = LineHeightStyle(
+                    alignment = LineHeightStyle.Alignment.Center,
+                    trim = LineHeightStyle.Trim.Both,
+                ),
+            ),
         )
     }
 }
