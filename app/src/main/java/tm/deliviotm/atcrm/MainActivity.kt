@@ -123,6 +123,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -8319,6 +8320,8 @@ private fun OperationsWorkspacePane(
             total = pageData.total
             cache?.putRows(KassaApi.opsCacheKey(), (pendingReview + pageData.items).distinctBy { it.id })
             loaded = true
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             err = e.message
             cache?.getRows(KassaApi.opsCacheKey())?.let {
@@ -8326,7 +8329,7 @@ private fun OperationsWorkspacePane(
                 loaded = true
             }
         } finally {
-            refreshing = false
+            if (isActive) refreshing = false
         }
     }
 
@@ -8345,10 +8348,12 @@ private fun OperationsWorkspacePane(
             intake = pack.first
             pendingOps = pack.second
             loaded = true
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             err = e.message
         } finally {
-            refreshing = false
+            if (isActive) refreshing = false
         }
     }
 
@@ -8364,11 +8369,13 @@ private fun OperationsWorkspacePane(
             activity = if (arr != null) KassaApi.eachObj(arr) else emptyList()
             activityTotal = o.optInt("total", activity.size)
             loaded = true
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             err = e.message ?: "Не удалось загрузить журнал"
             activity = emptyList()
         } finally {
-            refreshing = false
+            if (isActive) refreshing = false
         }
     }
 
