@@ -38,10 +38,15 @@ import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
@@ -275,8 +280,30 @@ internal fun CrmShell(
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     val ctx = LocalContext.current
-    val navOrder = NavOrderStore.load(ctx)
+    var navTick by remember { mutableIntStateOf(0) }
+    val navOrder = remember(navTick) { NavOrderStore.load(ctx) }
     val sections = remember(modules, navOrder) { siteDrawerSections(modules, navOrder) }
+    DisposableEffect(ctx) {
+        val prefs = ctx.getSharedPreferences("atcrm", android.content.Context.MODE_PRIVATE)
+        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == NavOrderStore.KEY) navTick++
+        }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
+    LaunchedEffect(token, user?.id) {
+        val t = token ?: return@LaunchedEffect
+        val a = api ?: return@LaunchedEffect
+        withContext(Dispatchers.IO) { NavOrderStore.sync(ctx, a, t, user?.navOrderPaths.orEmpty()) }
+        navTick++
+    }
+    LaunchedEffect(drawerState.currentValue) {
+        if (drawerState.currentValue != DrawerValue.Open) return@LaunchedEffect
+        val t = token ?: return@LaunchedEffect
+        val a = api ?: return@LaunchedEffect
+        withContext(Dispatchers.IO) { NavOrderStore.sync(ctx, a, t) }
+        navTick++
+    }
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {

@@ -22,6 +22,7 @@ data class AppUser(
     val avatarUrl: String = "",
     val phone: String = "",
     val email: String = "",
+    val navOrderPaths: List<String> = emptyList(),
 )
 
 data class IntakeTone(
@@ -1687,12 +1688,13 @@ class KassaApi(private val baseUrl: String) {
             val size = pageSize.coerceIn(25, 500)
             val pg = page.coerceAtLeast(1)
             val pay = paymentType.ifBlank { "ALL" }
-            val st = status.ifBlank { "CREATED" }
+            val st = status.ifBlank { "ALL" }
             val q = StringBuilder(
                 "/operations?dateFrom=${enc(isoDayStart(dateFrom))}&dateTo=${enc(isoDayEnd(dateTo))}" +
-                    "&page=$pg&pageSize=$size&paymentType=${enc(pay)}&status=${enc(st)}" +
+                    "&page=$pg&pageSize=$size&paymentType=${enc(pay)}" +
                     "&sortBy=${enc(sortBy.ifBlank { "orderDatetime" })}&sortDir=${enc(sortDir.ifBlank { "desc" })}",
             )
+            if (st != "ALL") q.append("&status=${enc(st)}")
             if (establishmentType.isNotBlank() && establishmentType != "ALL") {
                 q.append("&establishmentType=${enc(establishmentType)}")
             }
@@ -2211,6 +2213,34 @@ class KassaApi(private val baseUrl: String) {
                 c.contains("audit") || t.contains("журнал") || t.contains("аудит") -> "audit"
                 c.contains("cities") || t.contains("город") -> "sales_cities"
                 else -> "profile"
+            }
+        }
+
+        fun isMarketingWorkspace(path: String, tab: String = ""): Boolean {
+            if (tab.equals("marketing", true)) return true
+            val c = path.substringBefore("?").trimEnd('/')
+            return c.startsWith("/clients") ||
+                c.startsWith("/marketing") ||
+                c.startsWith("/qr") ||
+                c.contains("client-portraits") ||
+                c.startsWith("/push/logs")
+        }
+
+        fun marketingTabFromPath(path: String, title: String = ""): String {
+            val c = path.substringBefore("?").lowercase()
+            val t = title.trim()
+            return when {
+                t == "Портреты" || c.contains("client-portraits") -> "portraits"
+                t == "SMS" || c.contains("/sms/broadcast") -> "sms"
+                t == "Push" || c.startsWith("/push/logs") -> "push"
+                t.contains("Календарь") || c.contains("push-calendar") -> "calendar"
+                t == "Контент" || c.contains("content-plan") -> "content"
+                t.contains("Баннер") || c.contains("banner") -> "banners"
+                t.contains("Реклам") || c.contains("/ads") -> "ads"
+                t.contains("Промо") || c.contains("promo") -> "promos"
+                t == "QR" || c.startsWith("/qr") -> "qr"
+                t.contains("Мессенджер") || c.contains("telegram") -> "messengers"
+                else -> "clients"
             }
         }
 
@@ -3651,6 +3681,13 @@ class KassaApi(private val baseUrl: String) {
                 avatarUrl = avatarUrlOf(o),
                 phone = pick(o, "phone", "mobile"),
                 email = pick(o, "email", "personalEmail", "mailboxEmail"),
+                navOrderPaths = buildList {
+                    val arr = o.optJSONArray("navOrderPaths")
+                    if (arr != null) for (i in 0 until arr.length()) {
+                        val v = arr.optString(i).trim()
+                        if (v.startsWith("/")) add(v)
+                    }
+                },
             )
         }
 

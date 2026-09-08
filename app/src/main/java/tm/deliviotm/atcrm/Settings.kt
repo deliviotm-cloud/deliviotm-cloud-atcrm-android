@@ -92,7 +92,7 @@ internal val SITE_NAV_ITEMS = listOf(
 
 internal object NavOrderStore {
     private const val PREF = "atcrm"
-    private const val KEY = "at-crm-nav-order"
+    const val KEY = "at-crm-nav-order"
 
     fun load(ctx: Context): List<String> {
         val raw = ctx.getSharedPreferences(PREF, Context.MODE_PRIVATE).getString(KEY, "").orEmpty()
@@ -116,6 +116,52 @@ internal object NavOrderStore {
     fun clear(ctx: Context) {
         ctx.getSharedPreferences(PREF, Context.MODE_PRIVATE).edit().remove(KEY).apply()
     }
+
+    fun pathsFrom(o: JSONObject): List<String> {
+        val arr = o.optJSONArray("paths") ?: return emptyList()
+        return (0 until arr.length()).mapNotNull { i ->
+            arr.optString(i).takeIf { it.startsWith("/") }
+        }
+    }
+
+    fun sync(ctx: Context, api: KassaApi, token: String, fromUser: List<String> = emptyList()): List<String> {
+        if (fromUser.isNotEmpty()) save(ctx, fromUser)
+        val local = load(ctx)
+        return try {
+            val remote = pathsFrom(api.getObject("/auth/me/nav-order", token))
+            if (remote.isNotEmpty()) {
+                save(ctx, remote)
+                remote
+            } else {
+                if (local.isNotEmpty()) {
+                    api.putJson("/auth/me/nav-order", token, JSONObject().put("paths", JSONArray(local)))
+                }
+                local
+            }
+        } catch (_: Exception) {
+            local
+        }
+    }
+
+    fun saveAll(ctx: Context, api: KassaApi?, token: String?, order: List<String>) {
+        save(ctx, order)
+        val a = api ?: return
+        val t = token ?: return
+        try {
+            a.putJson("/auth/me/nav-order", t, JSONObject().put("paths", JSONArray(order)))
+        } catch (_: Exception) {
+        }
+    }
+
+    fun clearAll(ctx: Context, api: KassaApi?, token: String?) {
+        clear(ctx)
+        val a = api ?: return
+        val t = token ?: return
+        try {
+            a.putJson("/auth/me/nav-order", t, JSONObject().put("paths", JSONArray()))
+        } catch (_: Exception) {
+        }
+    }
 }
 
 private val USER_ROLES = listOf(
@@ -136,7 +182,7 @@ private val USER_ROLES = listOf(
 
 private fun settingsHint(tab: String): String = when (tab) {
     "profile" -> "Фото, контакты и смена пароля"
-    "menu" -> "Порядок пунктов бокового меню, как на сайте"
+    "menu" -> "Порядок пунктов бокового меню: общий для сайта и приложений"
     "general" -> "Номер заказа и офисная сеть CRM"
     "monitor" -> "Системные показатели CRM"
     "sms" -> "Шлюз SMS: порты, квота и отправка"
@@ -244,7 +290,7 @@ private fun SettingsSectionBody(
     onReload: () -> Unit,
 ) {
     when (tab) {
-        "menu" -> SettingsMenuPane()
+        "menu" -> SettingsMenuPane(api, token)
         "general" -> SettingsGeneralPane(api, token, tick, onRefreshing)
         "monitor" -> SettingsMonitorPane(api, token, tick, onRefreshing)
         "sms" -> SettingsSmsPane(api, token, tick, onRefreshing, onReload)
@@ -260,19 +306,26 @@ private fun SettingsSectionBody(
 }
 
 @Composable
-private fun SettingsMenuPane() {
+private fun SettingsMenuPane(api: KassaApi, token: String?) {
     val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
     var order by remember { mutableStateOf(NavOrderStore.load(ctx).ifEmpty { SITE_NAV_ITEMS.map { it.to } }) }
     var msg by remember { mutableStateOf<String?>(null) }
     val byTo = remember { SITE_NAV_ITEMS.associateBy { it.to } }
     val visible = order.mapNotNull { byTo[it] } + SITE_NAV_ITEMS.filter { it.to !in order.toSet() }
 
+    LaunchedEffect(token) {
+        val t = token ?: return@LaunchedEffect
+        val synced = withContext(Dispatchers.IO) { NavOrderStore.sync(ctx, api, t) }
+        order = synced.ifEmpty { SITE_NAV_ITEMS.map { it.to } }
+    }
+
     LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        item { SiteSectionHead("Меню", "Порядок пунктов бокового меню, как на сайте") }
+        item { SiteSectionHead("Меню", "Порядок пунктов бокового меню: общий для сайта и приложений") }
         if (msg != null) item { ActionBanner(msg!!, error = false) }
         item {
             Text(
-                "Нажмите ▲ / ▼, чтобы переставить. Порядок сохраняется на этом устройстве.",
+                "Нажмите ▲ / ▼, чтобы переставить. Порядок общий для сайта, Android и iPhone.",
                 color = AtColors.muted,
                 fontSize = 12.sp,
             )
@@ -297,8 +350,10 @@ private fun SettingsMenuPane() {
                             if (i > 0) {
                                 next[i] = next[i - 1].also { next[i - 1] = next[i] }
                                 order = next
-                                NavOrderStore.save(ctx, next)
-                                msg = "Порядок меню сохранён"
+                                scope.launch {
+                                    withContext(Dispatchers.IO) { NavOrderStore.saveAll(ctx, api, token, next) }
+                                    msg = "Порядок меню сохранён — так же на сайте"
+                                }
                             }
                         }
                         .padding(8.dp),
@@ -315,8 +370,10 @@ private fun SettingsMenuPane() {
                             if (i in 0 until next.lastIndex) {
                                 next[i] = next[i + 1].also { next[i + 1] = next[i] }
                                 order = next
-                                NavOrderStore.save(ctx, next)
-                                msg = "Порядок меню сохранён"
+                                scope.launch {
+                                    withContext(Dispatchers.IO) { NavOrderStore.saveAll(ctx, api, token, next) }
+                                    msg = "Порядок меню сохранён — так же на сайте"
+                                }
                             }
                         }
                         .padding(8.dp),
@@ -325,9 +382,11 @@ private fun SettingsMenuPane() {
         }
         item {
             SettingsGhostBtn("Сбросить к порядку по умолчанию") {
-                NavOrderStore.clear(ctx)
-                order = SITE_NAV_ITEMS.map { it.to }
-                msg = "Сброшено к порядку по умолчанию"
+                scope.launch {
+                    withContext(Dispatchers.IO) { NavOrderStore.clearAll(ctx, api, token) }
+                    order = SITE_NAV_ITEMS.map { it.to }
+                    msg = "Сброшено к порядку по умолчанию"
+                }
             }
         }
     }

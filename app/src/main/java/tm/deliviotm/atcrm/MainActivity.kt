@@ -1232,6 +1232,18 @@ private fun App(
                 initialKind = KassaApi.salesKindFromTitle(s.spec.title),
                 onBack = { screen = Screen.Home },
             )
+        } else if (s.spec.path.startsWith("/courier-fleet") || s.spec.tab.equals("courierFleet", true)) {
+            CourierFleetWorkspacePane(
+                api = api,
+                token = token,
+                initialTab = when {
+                    s.spec.path.contains("deliver") -> "deliveries"
+                    s.spec.path.contains("payroll") -> "payroll"
+                    else -> "couriers"
+                },
+                onBack = { screen = Screen.Home },
+                onOpen = { row, spec -> openRowFrom(spec, row, s) },
+            )
         } else if (s.spec.path.startsWith("/workspace/tasks")) {
             TasksWorkspacePane(
                 api = api,
@@ -1253,6 +1265,14 @@ private fun App(
                 api = api,
                 token = token,
                 onBack = { screen = Screen.Home },
+            )
+        } else if (KassaApi.isMarketingWorkspace(s.spec.path, s.spec.tab)) {
+            MarketingWorkspacePane(
+                api = api,
+                token = token,
+                initialTab = KassaApi.marketingTabFromPath(s.spec.path, s.spec.title),
+                onBack = { screen = Screen.Home },
+                onOpen = { row, spec -> openRowFrom(spec, row, s) },
             )
         } else if (s.spec.path.startsWith("/sms/broadcasts") || s.spec.path.startsWith("/sms/recipient")) {
             SmsBroadcastsPane(
@@ -1317,6 +1337,14 @@ private fun App(
                 initialTab = KassaApi.salesTabFromPath(s.spec.path, s.spec.title),
                 initialKind = KassaApi.salesKindFromTitle(s.spec.title),
                 onBack = { screen = Screen.Home },
+            )
+        } else if (KassaApi.isMarketingWorkspace(s.spec.path, s.spec.tab)) {
+            MarketingWorkspacePane(
+                api = api,
+                token = token,
+                initialTab = KassaApi.marketingTabFromPath(s.spec.path, s.spec.title),
+                onBack = { screen = Screen.Home },
+                onOpen = { row, spec -> openRowFrom(spec, row, s) },
             )
         } else JsonObjectPane(
             title = s.spec.title,
