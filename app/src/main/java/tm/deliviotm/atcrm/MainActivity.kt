@@ -7164,7 +7164,7 @@ private fun SettingsPane(
                     Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(AtColors.panel).border(1.dp, AtColors.stroke, RoundedCornerShape(20.dp)).padding(16.dp),
                 ) {
                     Text("Приложение", color = AtColors.text, fontWeight = FontWeight.Bold, fontSize = 17.sp)
-                    SummaryPill("Версия", BuildConfig.VERSION_NAME, Modifier.fillMaxWidth().padding(top = 10.dp))
+                    SummaryPill("Версия", "ATCRM-${BuildConfig.VERSION_NAME}", Modifier.fillMaxWidth().padding(top = 10.dp))
                     val today = remember(ShiftLogStore.of(ctx).revision) { ShiftLogStore.of(ctx).stats() }
                     SummaryPill(
                         "Сегодня",

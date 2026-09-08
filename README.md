@@ -4,7 +4,7 @@
 Пакет / bundle: `tm.deliviotm.atcrm`.  
 API по умолчанию: `https://crm.deliviotm.com/api`.
 
-Текущая версия в репозитории: **1.6.69** (`versionCode` / build 229).
+Текущая версия в репозитории: **1.6.69** (`versionCode` / build 230).
 
 ## Ссылка для агентов (Android и iOS)
 
