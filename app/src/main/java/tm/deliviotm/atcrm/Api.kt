@@ -2972,6 +2972,99 @@ class KassaApi(private val baseUrl: String) {
 
         fun pickOrEmpty(o: JSONObject?, vararg keys: String): String = pick(o, *keys)
 
+        fun fieldLabel(key: String): String {
+            val raw = key.substringAfterLast('.')
+            return when (raw) {
+                "fullName", "name" -> "ФИО"
+                "phone", "mobile" -> "Телефон"
+                "city", "cityKey" -> "Город"
+                "isActive" -> "Активен"
+                "activityRating" -> "Оценка активности"
+                "delivioRating" -> "Оценка Delivio"
+                "delivioId" -> "ID в Delivio"
+                "deliveriesMonth" -> "Доставок за месяц"
+                "deliveriesTotal", "deliveries", "trips" -> "Доставок всего"
+                "monthlySalary", "salary" -> "Оклад"
+                "statsMonth", "period", "month" -> "Период"
+                "amount", "total", "payroll" -> "Сумма"
+                "orderNumber" -> "№ заказа"
+                "address", "deliveryAddress" -> "Адрес"
+                "status", "state" -> "Статус"
+                "courierName", "courier" -> "Курьер"
+                "establishmentName" -> "Заведение"
+                "delivioSyncedAt" -> "Синхронизация Delivio"
+                "createdAt" -> "Создан"
+                "updatedAt" -> "Обновлён"
+                "deliveredAt" -> "Доставлен"
+                "paidAt" -> "Выплачено"
+                "id" -> "ID"
+                "email" -> "Email"
+                "segment" -> "Сегмент"
+                "kind", "type" -> "Тип"
+                "ordersCount", "orderCount", "totalOrders" -> "Заказов"
+                "score" -> "Оценка"
+                "priority" -> "Приоритет"
+                "impact" -> "Влияние"
+                "insight", "recommendation" -> "Инсайт"
+                "text", "body", "description", "message" -> "Текст"
+                "campaign", "campaignName" -> "Кампания"
+                "channel" -> "Канал"
+                "audience" -> "Аудитория"
+                "code", "promoCode" -> "Промокод"
+                "discount", "discountPercent", "percent" -> "Скидка"
+                "discountAmount", "totalDiscount", "discountSum", "savedAmount", "totalAmount" -> "Сумма скидок"
+                "usageLimit", "maxUses" -> "Лимит"
+                "usedCount", "usageCount", "uses", "timesUsed", "redemptionsCount", "appliedCount", "totalUses" -> "Использований"
+                "uniqueClients", "uniqueUsers", "clientsCount", "uniqueCount", "distinctClients" -> "Уник. клиентов"
+                "lastUsedAt", "lastUsed", "lastAppliedAt" -> "Последнее исп."
+                "startsAt", "validFrom" -> "С"
+                "active" -> "Активен"
+                "qr", "qrValue", "payload" -> "QR"
+                "url", "link", "target" -> "Ссылка"
+                "banner", "bannerTitle" -> "Баннер"
+                "scheduledAt" -> "Запланирован"
+                "sentAt" -> "Отправлен"
+                "publishAt" -> "Публикация"
+                "expiresAt", "validTo", "endsAt" -> "Срок"
+                "connectedAt" -> "Подключён"
+                else -> raw.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
+            }
+        }
+
+        fun formatFieldValue(key: String, value: String, src: JSONObject? = null): String {
+            val raw = key.substringAfterLast('.')
+            if (value.equals("true", true)) return "да"
+            if (value.equals("false", true)) return "нет"
+            if (raw == "status" || raw == "state") return prettyStatus(value).ifBlank { value }
+            if (raw == "city" || raw == "cityKey") {
+                return when (value.lowercase()) {
+                    "ashgabat" -> "Ашхабад"
+                    "mary" -> "Мары"
+                    else -> value
+                }
+            }
+            if (
+                raw.endsWith("At") || raw.contains("Date", true) || raw.contains("Time", true) ||
+                (value.contains('T') && (value.contains('Z') || value.contains('+')))
+            ) {
+                val t = prettyTime(value)
+                if (t.isNotBlank()) return t
+            }
+            if (raw in listOf("monthlySalary", "salary", "amount", "total", "payroll", "totalDiscount", "discountSum", "savedAmount", "totalAmount", "discountAmount")) {
+                val n = src?.let { jsonNum(it, raw) } ?: value.replace(" ", "").replace(',', '.').toDoubleOrNull()
+                if (n != null && n > 0) return tmt(n)
+            }
+            if (raw in listOf("discount", "discountPercent", "percent")) {
+                val n = src?.let { jsonNum(it, raw) } ?: value.replace(" ", "").replace(',', '.').toDoubleOrNull()
+                if (n != null && n > 0) return "${prettyNumber(n.toString())}%"
+            }
+            if (raw in listOf("usedCount", "usageCount", "uses", "timesUsed", "redemptionsCount", "appliedCount", "totalUses", "uniqueClients", "uniqueUsers", "clientsCount", "uniqueCount", "distinctClients", "ordersCount", "orderCount", "totalOrders", "usageLimit", "maxUses")) {
+                val n = src?.let { jsonNumOpt(it, raw) } ?: value.replace(" ", "").replace(',', '.').toDoubleOrNull()
+                if (n != null) return prettyNumber(n.toString())
+            }
+            return value
+        }
+
         fun phoneOf(o: JSONObject): String {
             val raw = pick(
                 o,
