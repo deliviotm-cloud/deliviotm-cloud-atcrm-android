@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.IntrinsicSize
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -396,25 +395,32 @@ internal fun SiteTopBar(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text("⌕  ", color = AtColors.muted, fontSize = 14.sp)
-                Text("Поиск по разделам, клиентам, задачам…", color = AtColors.muted, fontSize = 13.sp, maxLines = 1)
+                Text(
+                    "Поиск по разделам, клиентам, задачам…",
+                    color = AtColors.muted,
+                    fontSize = 13.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
             }
             Spacer(Modifier.width(8.dp))
             SiteThemeToggle()
-            Spacer(Modifier.width(4.dp))
+            Spacer(Modifier.width(8.dp))
             Box(
-                Modifier.size(32.dp).clickable(onClick = onBell),
+                Modifier.size(36.dp).clickable(onClick = onBell),
                 contentAlignment = Alignment.Center,
             ) {
-                Text("🔔", fontSize = 14.sp)
+                Text("🔔", fontSize = 16.sp)
                 CountBadge(
                     count = bellCount,
                     compact = true,
                     modifier = Modifier
                         .align(Alignment.TopEnd)
-                        .offset(x = 6.dp, y = (-4).dp),
+                        .padding(1.dp),
                 )
             }
-            Spacer(Modifier.width(4.dp))
+            Spacer(Modifier.width(8.dp))
             Box(
                 Modifier
                     .clip(CircleShape)
@@ -442,18 +448,22 @@ private fun CountBadge(
 ) {
     if (count <= 0) return
     val min = if (compact) 16.dp else 22.dp
-    Text(
-        if (count > 99) "99+" else count.toString(),
-        color = Color.White,
-        fontSize = if (compact) 9.sp else 11.sp,
-        fontWeight = FontWeight.Bold,
-        textAlign = TextAlign.Center,
-        maxLines = 1,
-        modifier = modifier
+    Box(
+        modifier
             .defaultMinSize(minWidth = min, minHeight = min)
-            .background(AtColors.danger, RoundedCornerShape(999.dp))
-            .padding(horizontal = if (compact) 4.dp else 6.dp, vertical = 1.dp),
-    )
+            .background(AtColors.danger, CircleShape)
+            .padding(horizontal = if (count > 9) 4.dp else 0.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            if (count > 99) "99+" else count.toString(),
+            color = Color.White,
+            fontSize = if (compact) 9.sp else 11.sp,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+        )
+    }
 }
 
 @Composable
