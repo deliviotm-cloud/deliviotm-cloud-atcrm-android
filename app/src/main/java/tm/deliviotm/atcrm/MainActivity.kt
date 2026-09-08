@@ -862,7 +862,23 @@ private fun App(
         }
         if (path != null && path.contains("/messages") && token != null) {
             openChat(row.title, path, back)
-        } else if (path != null && token != null) {
+            return
+        }
+        val operation = meta.operation || spec.path.startsWith("/operations") || KassaApi.looksLikeOperation(row.raw)
+        val task = meta.task || KassaApi.looksLikeTask(row.raw)
+        if (operation || task) {
+            screen = Screen.Detail(
+                row.title,
+                KassaApi.unwrapOperation(row.raw),
+                back,
+                operation = operation,
+                operationId = meta.operationId.ifBlank { KassaApi.pick(row.raw, "id", "externalId", "orderId") },
+                task = task,
+                taskId = meta.taskId.ifBlank { KassaApi.pick(row.raw, "id", "_id") },
+            )
+            return
+        }
+        if (path != null && token != null) {
             scope.launch {
                 val obj = try {
                     withContext(Dispatchers.IO) { api.getOne(path, token!!) }
@@ -8325,13 +8341,19 @@ private fun OperationsWorkspacePane(
                 raw to pending
             }
             val pageData = KassaApi.pagedRows(pack.first)
-            rows = pageData.items.filter { KassaApi.cityKeyAllowed(KassaApi.pick(it.raw, "cityKey")) }
-            pendingReview = pack.second.filter {
+            val pageItems = pageData.items.filter { KassaApi.cityKeyAllowed(KassaApi.pick(it.raw, "cityKey")) }
+            rows = pageItems
+            val pending = pack.second.filter {
                 KassaApi.cityKeyAllowed(KassaApi.pick(it.raw, "cityKey")) &&
-                    (KassaApi.operationStatus(it) == "PENDING_REVIEW" || KassaApi.needsConfirm(it))
+                    (KassaApi.operationStatus(it).contains("PENDING") || KassaApi.needsConfirm(it))
+            }.toMutableList()
+            val pendingIds = pending.map { it.id }.filter { it.isNotBlank() }.toSet()
+            for (row in pageItems) {
+                if (KassaApi.needsConfirm(row) && (row.id.isBlank() || row.id !in pendingIds)) pending += row
             }
+            pendingReview = pending
             total = pageData.total
-            cache?.putRows(KassaApi.opsCacheKey(), (pendingReview + pageData.items).distinctBy { it.id })
+            cache?.putRows(KassaApi.opsCacheKey(), (pendingReview + pageItems).distinctBy { it.id })
             loaded = true
         } catch (e: CancellationException) {
             throw e
@@ -8810,11 +8832,13 @@ private fun OpsKpi(label: String, value: String, extra: String, modifier: Modifi
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun OpsOrderCard(row: JsonRow, onOpen: () -> Unit, onConfirm: () -> Unit = {}) {
     val ctx = LocalContext.current
     val o = row.raw
     val status = KassaApi.operationStatus(row)
+    val showConfirm = KassaApi.needsConfirm(row)
     val orderNo = KassaApi.orderNo(o).ifBlank { row.title }
     val est = KassaApi.establishmentName(o)
     val estType = KassaApi.estTypeLabel(KassaApi.opEstType(o))
@@ -8830,7 +8854,11 @@ private fun OpsOrderCard(row: JsonRow, onOpen: () -> Unit, onConfirm: () -> Unit
     val promo = KassaApi.opMoney(o, "promoDiscountPercent")
     val free = o.optBoolean("isPlatformFreeDelivery", false)
     Column(
-        Modifier.fillMaxWidth().atCard(16.dp).clickable(onClick = onOpen).padding(14.dp),
+        Modifier
+            .fillMaxWidth()
+            .atCard(16.dp)
+            .combinedClickable(onClick = onOpen)
+            .padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -8843,7 +8871,7 @@ private fun OpsOrderCard(row: JsonRow, onOpen: () -> Unit, onConfirm: () -> Unit
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            StatusChip(prettyStatus(status.ifBlank { "CREATED" }))
+            StatusChip(prettyStatus(status.ifBlank { if (showConfirm) "PENDING_REVIEW" else "CREATED" }))
         }
         if (est.isNotBlank()) Text(est, color = AtColors.text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
         Text(
@@ -8865,7 +8893,7 @@ private fun OpsOrderCard(row: JsonRow, onOpen: () -> Unit, onConfirm: () -> Unit
         }
         if (extras.isNotEmpty()) Text(extras.joinToString(" · "), color = AtColors.accent, fontSize = 12.sp)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (KassaApi.needsConfirm(row)) {
+            if (showConfirm) {
                 Box(
                     Modifier
                         .height(28.dp)
@@ -8897,6 +8925,7 @@ private fun MoneyChip(label: String, value: String, modifier: Modifier = Modifie
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun LogisticsIntakeCard(
     row: JsonRow,
@@ -8915,7 +8944,11 @@ private fun LogisticsIntakeCard(
         else -> prettyStatus(status.ifBlank { "NEW" })
     }
     Column(
-        Modifier.fillMaxWidth().atCard(14.dp).clickable(onClick = onOpen).padding(14.dp),
+        Modifier
+            .fillMaxWidth()
+            .atCard(14.dp)
+            .combinedClickable(onClick = onOpen)
+            .padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -9045,6 +9078,14 @@ private fun OpCreateDialog(
 }
 
 @Composable
+private fun DetailKv(label: String, value: String) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+        Text(label, color = AtColors.muted, fontSize = 12.sp, modifier = Modifier.width(110.dp))
+        Text(value, color = AtColors.text, fontSize = 14.sp, modifier = Modifier.weight(1f))
+    }
+}
+
+@Composable
 private fun OperationDetailPane(
     title: String,
     operationId: String,
@@ -9058,7 +9099,7 @@ private fun OperationDetailPane(
 ) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
-    var obj by remember { mutableStateOf(preload) }
+    var obj by remember(operationId) { mutableStateOf(preload?.let { KassaApi.unwrapOperation(it) }) }
     var err by remember { mutableStateOf<String?>(null) }
     var msg by remember { mutableStateOf<String?>(null) }
     var tick by remember { mutableIntStateOf(0) }
@@ -9068,28 +9109,81 @@ private fun OperationDetailPane(
     var problemOpen by remember { mutableStateOf(false) }
     val pullState = rememberPullToRefreshState()
     var refreshing by remember { mutableStateOf(false) }
+    var clientName by remember(operationId) { mutableStateOf("") }
+    var clientPhone by remember(operationId) { mutableStateOf("") }
+    var clientAddress by remember(operationId) { mutableStateOf("") }
+
+    fun applyClient(src: JSONObject) {
+        KassaApi.clientDisplayName(src).takeIf { it.isNotBlank() }?.let { clientName = it }
+        val phone = KassaApi.phoneOf(src).ifBlank { KassaApi.pick(src, "clientPhone", "phone", "mobile") }
+        if (phone.isNotBlank()) clientPhone = phone
+        KassaApi.deliveryAddressOf(src).takeIf { it.isNotBlank() }?.let { clientAddress = it }
+    }
 
     LaunchedEffect(operationId, tick) {
-        if (token.isNullOrBlank() || operationId.isBlank()) return@LaunchedEffect
-        if (obj == null) obj = preload
+        preload?.let { applyClient(KassaApi.unwrapOperation(it)) }
+        if (token.isNullOrBlank()) return@LaunchedEffect
+        val id = operationId.ifBlank { obj?.let { KassaApi.pick(it, "id", "externalId", "orderId") }.orEmpty() }
+        if (id.isBlank()) return@LaunchedEffect
+        if (obj == null) obj = preload?.let { KassaApi.unwrapOperation(it) }
         refreshing = obj != null
         try {
             val next = withContext(Dispatchers.IO) {
-                val o = api.getObject(KassaApi.operationDetailPath(operationId), token)
-                api.pingOpsActivity(token, "CARD", operationId, KassaApi.pick(o, "orderNumber"))
+                val o = KassaApi.unwrapOperation(api.getObject(KassaApi.operationDetailPath(id), token))
+                api.pingOpsActivity(token, "CARD", id, KassaApi.pick(o, "orderNumber"))
                 o
             }
             obj = next
+            applyClient(next)
+            val orderNo = KassaApi.orderNo(next)
+            val city = KassaApi.pick(next, "cityKey")
+            if (orderNo.isNotBlank()) {
+                val hits = withContext(Dispatchers.IO) {
+                    runCatching { api.getRows(KassaApi.logisticsIntakePath(30, "ALL", city, orderNo), token) }.getOrDefault(emptyList())
+                }
+                val hit = hits.firstOrNull { KassaApi.orderNo(it.raw) == orderNo } ?: hits.firstOrNull()
+                if (hit != null) {
+                    applyClient(hit.raw)
+                    if (KassaApi.opLineItems(next).isEmpty()) {
+                        val body = hit.raw.optJSONArray("bodyItems") ?: hit.raw.optJSONArray("lineItems")
+                        if (body != null && body.length() > 0) {
+                            obj = JSONObject(next.toString()).put("lineItems", body)
+                        }
+                    }
+                }
+            }
+            val uid = KassaApi.opUserId(next).filter { it.isDigit() }
+            if (uid.isNotBlank()) {
+                val clients = withContext(Dispatchers.IO) {
+                    runCatching {
+                        api.getRows("/clients?search=${java.net.URLEncoder.encode(uid, "UTF-8")}&take=10&skip=0", token)
+                    }.getOrDefault(emptyList())
+                }
+                val hit = clients.firstOrNull { row ->
+                    listOf(row.id, KassaApi.pick(row.raw, "externalUserId", "appClientExternalUserId", "delivioId")).contains(uid)
+                } ?: clients.firstOrNull { it.title.contains(uid) }
+                if (hit != null) {
+                    applyClient(hit.raw)
+                    val named = listOf(KassaApi.pick(hit.raw, "firstName"), KassaApi.pick(hit.raw, "lastName"))
+                        .filter { it.isNotBlank() }.joinToString(" ")
+                    if (named.isNotBlank()) clientName = named
+                    if (clientPhone.isBlank()) clientPhone = KassaApi.pick(hit.raw, "phone", "clientPhone", "mobile")
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             if (obj == null) err = e.message
+            obj?.let { applyClient(it) }
         } finally {
             refreshing = false
         }
     }
 
     val o = obj
+    val orderNoTitle = o?.let { KassaApi.orderNo(it) }.orEmpty().ifBlank { title }
     Column(Modifier.fillMaxSize().background(AtColors.bgDeep)) {
-        TopLine(title.ifBlank { "Операция" }, onBack, onRefresh = { tick++ })
+        TopLine("Заказ № $orderNoTitle".trim(), onBack, onRefresh = { tick++ })
         PullToRefreshBox(
             isRefreshing = refreshing,
             onRefresh = { tick++ },
@@ -9101,18 +9195,23 @@ private fun OperationDetailPane(
                 o == null -> LoadingCard()
                 else -> {
                     val orderNo = KassaApi.orderNo(o).ifBlank { title }
-                    val status = KassaApi.pick(o, "status")
+                    val status = KassaApi.pick(o, "status", "state")
                     val lines = KassaApi.opLineItems(o)
-                    val phone = KassaApi.phoneOf(o)
+                    val extrasSales = KassaApi.additionalSalesRows(o)
+                    val phone = clientPhone.ifBlank { KassaApi.phoneOf(o) }
                     val chat = KassaApi.chatLinkFromOperation(o)
+                    val city = KassaApi.cityLabel(KassaApi.pick(o, "cityKey")).takeIf { it != "—" }.orEmpty()
                     LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         if (err != null) item { ActionBanner(err!!, error = true) }
                         if (msg != null) item { ActionBanner(msg!!, error = false) }
                         item {
                             Column(Modifier.fillMaxWidth().atCard(14.dp).padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    StatusChip(prettyStatus(status.ifBlank { "CREATED" }))
+                                    StatusChip(prettyStatus(status.ifBlank { if (status.contains("PENDING", true) || KassaApi.needsConfirm(JsonRow(operationId, "", "", o))) "PENDING_REVIEW" else "CREATED" }))
                                     Text(KassaApi.paymentLabel(KassaApi.pick(o, "paymentType")), color = AtColors.muted, fontSize = 13.sp)
+                                    if (city.isNotBlank()) {
+                                        Text(city, color = AtColors.muted, fontSize = 13.sp, modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.End)
+                                    }
                                 }
                                 Text("№ $orderNo", color = AtColors.text, fontWeight = FontWeight.Bold, fontSize = 22.sp)
                                 Text(KassaApi.establishmentName(o).ifBlank { "—" }, color = AtColors.text, fontSize = 15.sp)
@@ -9125,6 +9224,23 @@ private fun OperationDetailPane(
                                     color = AtColors.muted,
                                     fontSize = 13.sp,
                                 )
+                            }
+                        }
+                        item {
+                            Column(Modifier.fillMaxWidth().atCard(14.dp).padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text("Клиент", color = AtColors.text, fontWeight = FontWeight.Bold)
+                                DetailKv("Имя", clientName.ifBlank { KassaApi.clientDisplayName(o) }.ifBlank { "—" })
+                                DetailKv("Телефон", phone.ifBlank { "—" })
+                                DetailKv("Адрес", clientAddress.ifBlank { KassaApi.deliveryAddressOf(o) }.ifBlank { "—" })
+                                val uid = KassaApi.opUserId(o)
+                                if (uid.isNotBlank()) DetailKv("ID пользователя", uid)
+                                val courier = KassaApi.pick(o, "courierName", "courier", "driverName")
+                                if (courier.isNotBlank()) DetailKv("Курьер", courier)
+                                val comment = KassaApi.pick(o, "comment", "note", "clientComment", "operatorComment", "remark")
+                                if (comment.isNotBlank()) {
+                                    Text("Комментарий", color = AtColors.muted, fontSize = 12.sp)
+                                    Text(comment, color = AtColors.text, fontSize = 14.sp)
+                                }
                             }
                         }
                         item {
@@ -9158,7 +9274,7 @@ private fun OperationDetailPane(
                                     Text("Состав заказа", color = AtColors.text, fontWeight = FontWeight.Bold)
                                     lines.forEach { line ->
                                         val name = KassaApi.pick(line, "dishName", "name", "title")
-                                        val qty = KassaApi.pick(line, "quantity").ifBlank { "1" }
+                                        val qty = KassaApi.pick(line, "quantity", "qty", "count").ifBlank { "1" }
                                         val sum = KassaApi.tmt(KassaApi.jsonNum(line, "lineTotal", "amount"))
                                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                             Text("$qty × $name", color = AtColors.text, fontSize = 13.sp, modifier = Modifier.weight(1f))
@@ -9168,11 +9284,28 @@ private fun OperationDetailPane(
                                 }
                             }
                         }
+                        if (extrasSales.isNotEmpty()) {
+                            item {
+                                Column(Modifier.fillMaxWidth().atCard(14.dp).padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text("Доп. продажи", color = AtColors.text, fontWeight = FontWeight.Bold)
+                                    extrasSales.forEach { extra ->
+                                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                            Text(KassaApi.extraKindLabel(KassaApi.pick(extra, "kind")), color = AtColors.text, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                                            Text(
+                                                "${KassaApi.paymentLabel(KassaApi.pick(extra, "paymentType"))} · ${KassaApi.tmt(KassaApi.jsonNum(extra, "amount"))}",
+                                                color = AtColors.muted,
+                                                fontSize = 13.sp,
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
                         item {
                             Column(Modifier.fillMaxWidth().atCard(14.dp).padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Text("Действия", color = AtColors.text, fontWeight = FontWeight.Bold)
                                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    if (status.equals("PENDING_REVIEW", true) || KassaApi.needsConfirm(JsonRow(operationId, "", "", o))) {
+                                    if (status.contains("PENDING", ignoreCase = true) || KassaApi.needsConfirm(JsonRow(operationId, "", "", o))) {
                                         InlineActionChip("Подтвердить", filled = true) {
                                             val t = token ?: return@InlineActionChip
                                             busy = true
@@ -9287,29 +9420,49 @@ private fun OpEditDialog(
     onDismiss: () -> Unit,
     onSave: (JSONObject) -> Unit,
 ) {
+    val whenRaw = KassaApi.pick(obj, "orderDatetime", "createdAt")
+    var orderNo by remember { mutableStateOf(KassaApi.orderNo(obj).filter { it.isDigit() }) }
+    var clientId by remember { mutableStateOf(KassaApi.opUserId(obj).filter { it.isDigit() }) }
+    var orderDate by remember { mutableStateOf(whenRaw.take(10)) }
+    var orderTime by remember { mutableStateOf(KassaApi.operationLocalTimeHms(whenRaw).ifBlank { "12:00:00" }) }
     var amount by remember { mutableStateOf(KassaApi.opMoney(obj, "orderAmount", "amount").toString()) }
     var delivery by remember { mutableStateOf(KassaApi.opMoney(obj, "deliveryAmount").toString()) }
     var pay by remember { mutableStateOf(KassaApi.pick(obj, "paymentType").ifBlank { "CASH" }) }
+    var delPay by remember {
+        mutableStateOf(
+            KassaApi.pick(obj, "deliveryPaymentType").ifBlank { if (pay == "CASH") "CASH" else "ONLINE" },
+        )
+    }
     var loyalty by remember { mutableStateOf(KassaApi.opMoney(obj, "loyaltyDiscountPercent").toString()) }
     var promo by remember { mutableStateOf(KassaApi.opMoney(obj, "promoDiscountPercent").toString()) }
     var free by remember { mutableStateOf(obj.optBoolean("isPlatformFreeDelivery", false)) }
+    var compensation by remember { mutableStateOf(KassaApi.opMoney(obj, "platformDeliveryCompensation").toString()) }
     var err by remember { mutableStateOf<String?>(null) }
     val scroll = rememberScrollState()
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Column(
             Modifier.fillMaxWidth().fillMaxHeight(0.9f).padding(12.dp).clip(RoundedCornerShape(18.dp)).background(AtColors.panel).padding(16.dp),
         ) {
-            Text("Редактировать", color = AtColors.text, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            Text("Редактировать как на сайте", color = AtColors.text, fontWeight = FontWeight.Bold, fontSize = 18.sp)
             Column(Modifier.weight(1f).verticalScroll(scroll).padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Оплата", color = AtColors.muted, fontSize = 12.sp)
+                OutlinedTextField(orderNo, { orderNo = it.filter { ch -> ch.isDigit() } }, label = { Text("№ заказа") }, singleLine = true, modifier = Modifier.fillMaxWidth(), colors = fieldColors())
+                OutlinedTextField(clientId, { clientId = it.filter { ch -> ch.isDigit() }.take(4) }, label = { Text("ID пользователя (4 цифры)") }, singleLine = true, modifier = Modifier.fillMaxWidth(), colors = fieldColors())
+                OutlinedTextField(orderDate, { orderDate = it }, label = { Text("Дата (ГГГГ-ММ-ДД)") }, singleLine = true, modifier = Modifier.fillMaxWidth(), colors = fieldColors())
+                OutlinedTextField(orderTime, { orderTime = it }, label = { Text("Время (ЧЧ:ММ:СС)") }, singleLine = true, modifier = Modifier.fillMaxWidth(), colors = fieldColors())
+                Text("Оплата заказа", color = AtColors.muted, fontSize = 12.sp)
                 SiteSegmented(value = pay, items = listOf("CASH" to "Наличные", "ONLINE" to "Онлайн", "MIXED" to "Смешанная"), onChange = { pay = it })
+                Text("Оплата доставки", color = AtColors.muted, fontSize = 12.sp)
+                SiteSegmented(value = delPay, items = listOf("CASH" to "Наличные", "ONLINE" to "Онлайн"), onChange = { delPay = it })
                 OutlinedTextField(amount, { amount = it }, label = { Text("Сумма без доставки") }, singleLine = true, modifier = Modifier.fillMaxWidth(), colors = fieldColors())
                 OutlinedTextField(delivery, { delivery = it }, label = { Text("Доставка") }, singleLine = true, modifier = Modifier.fillMaxWidth(), colors = fieldColors())
                 OutlinedTextField(loyalty, { loyalty = it }, label = { Text("Лояльность %") }, singleLine = true, modifier = Modifier.fillMaxWidth(), colors = fieldColors())
                 OutlinedTextField(promo, { promo = it }, label = { Text("Промо %") }, singleLine = true, modifier = Modifier.fillMaxWidth(), colors = fieldColors())
                 Row(Modifier.fillMaxWidth().clickable { free = !free }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(if (free) "☑" else "☐", modifier = Modifier.width(22.dp), color = AtColors.accent)
-                    Text("Бесплатная доставка платформы", color = AtColors.text)
+                    Text("Бесплатная доставка от платформы", color = AtColors.text)
+                }
+                if (free) {
+                    OutlinedTextField(compensation, { compensation = it }, label = { Text("Сумма компенсации") }, singleLine = true, modifier = Modifier.fillMaxWidth(), colors = fieldColors())
                 }
                 err?.let { Text(it, color = AtColors.danger) }
             }
@@ -9320,17 +9473,25 @@ private fun OpEditDialog(
                 Box(
                     Modifier.weight(1f).height(44.dp).clip(RoundedCornerShape(12.dp)).background(AtColors.accent).clickable(enabled = !busy) {
                         val amt = amount.replace(',', '.').toDoubleOrNull()
-                        if (amt == null || amt < 0) { err = "Укажите сумму"; return@clickable }
+                        if (amt == null || amt <= 0) { err = "Сумма без доставки должна быть больше 0"; return@clickable }
                         val del = delivery.replace(',', '.').toDoubleOrNull() ?: 0.0
                         val body = JSONObject()
                             .put("paymentType", pay)
-                            .put("deliveryPaymentType", pay)
+                            .put("deliveryPaymentType", if (delPay == "CASH") "CASH" else "ONLINE")
                             .put("orderAmount", amt)
                             .put("commissionBaseAmount", amt)
                             .put("deliveryAmount", del)
                             .put("loyaltyDiscountPercent", loyalty.replace(',', '.').toDoubleOrNull() ?: 0.0)
                             .put("promoDiscountPercent", promo.replace(',', '.').toDoubleOrNull() ?: 0.0)
                             .put("isPlatformFreeDelivery", free)
+                            .put("platformDeliveryCompensation", if (free) compensation.replace(',', '.').toDoubleOrNull() ?: 0.0 else 0.0)
+                        val digits = orderNo.filter { it.isDigit() }
+                        if (digits.isNotBlank()) body.put("orderNumber", digits)
+                        val cid = clientId.filter { it.isDigit() }
+                        if (cid.length == 4) body.put("appClientExternalUserId", cid)
+                        if (orderDate.length == 10 && orderTime.length == 8) {
+                            body.put("orderDatetime", "${orderDate}T$orderTime.000Z")
+                        }
                         onSave(body)
                     },
                     contentAlignment = Alignment.Center,

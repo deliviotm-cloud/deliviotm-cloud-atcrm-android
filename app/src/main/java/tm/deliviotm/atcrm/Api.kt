@@ -2468,10 +2468,11 @@ class KassaApi(private val baseUrl: String) {
                 "&paymentType=ALL&establishmentType=ALL&dateBasis=business"
         }
 
-        fun logisticsIntakePath(pageSize: Int = 200, transition: String = "ALL", cityKey: String = ""): String {
+        fun logisticsIntakePath(pageSize: Int = 200, transition: String = "ALL", cityKey: String = "", search: String = ""): String {
             val size = pageSize.coerceIn(20, 200)
             val q = StringBuilder("/operations/logistics-intake?take=$size&skip=0&transition=${enc(transition.ifBlank { "ALL" })}")
             if (cityKey.isNotBlank()) q.append("&cityKey=${enc(cityKey)}")
+            if (search.isNotBlank()) q.append("&search=${enc(search.trim())}")
             return q.toString()
         }
 
@@ -2727,7 +2728,7 @@ class KassaApi(private val baseUrl: String) {
                 o.opt("data") is JSONArray -> o.getJSONArray("data")
                 else -> return null
             }
-            if (arr.length() == 0) return emptyList()
+            if (arr.length() == 0) return null
             val first = arr.optJSONObject(0) ?: return null
             val looks = first.has("text") || first.has("body") || first.has("content") ||
                 first.has("message") || first.has("html") || first.has("imageUrl") ||
@@ -2966,10 +2967,30 @@ class KassaApi(private val baseUrl: String) {
             return out
         }
 
+        private fun jsonScalar(v: Any?): String {
+            if (v == null || v === JSONObject.NULL) return ""
+            return when (v) {
+                is JSONObject -> {
+                    for (k in arrayOf("code", "value", "status", "name", "label", "text", "id", "uuid")) {
+                        if (!v.has(k) || v.isNull(k)) continue
+                        val inner = v.opt(k)
+                        if (inner is JSONObject || inner is JSONArray) continue
+                        val s = inner?.toString()?.trim().orEmpty()
+                        if (s.isNotBlank() && s != "null") return s
+                    }
+                    ""
+                }
+                is JSONArray -> if (v.length() == 0) "" else jsonScalar(v.opt(0))
+                is Number, is Boolean -> v.toString()
+                else -> v.toString().trim()
+            }
+        }
+
         fun pick(o: JSONObject?, vararg keys: String): String {
             if (o == null) return ""
             for (k in keys) {
-                val s = o.opt(k)?.toString()?.trim().orEmpty()
+                if (!o.has(k) || o.isNull(k)) continue
+                val s = jsonScalar(o.opt(k))
                 if (s.isNotBlank() && s != "null") return s
             }
             return ""
@@ -3127,7 +3148,7 @@ class KassaApi(private val baseUrl: String) {
         }
 
         fun operationStatus(row: JsonRow): String =
-            pick(row.raw, "status", "state").trim().uppercase()
+            normalizeStatusToken(pick(row.raw, "status", "orderStatus", "state", "statusCode"))
 
         fun establishmentName(o: JSONObject): String {
             o.optJSONObject("establishment")?.let { nested ->
@@ -3146,6 +3167,54 @@ class KassaApi(private val baseUrl: String) {
             }
             return ""
         }
+
+        fun clientDisplayName(o: JSONObject): String {
+            val firstLast = listOf(pick(o, "firstName"), pick(o, "lastName")).filter { it.isNotBlank() }.joinToString(" ")
+            if (firstLast.isNotBlank()) return firstLast
+            val root = pick(o, "clientName", "customerName", "contactName", "fullName", "displayName")
+            if (root.isNotBlank() && root != pick(o, "orderNumber", "externalId")) return root
+            for (key in arrayOf("client", "customer", "appClient", "appUser")) {
+                val nest = o.optJSONObject(key) ?: continue
+                val named = listOf(pick(nest, "firstName"), pick(nest, "lastName")).filter { it.isNotBlank() }.joinToString(" ")
+                    .ifBlank { pick(nest, "fullName", "name", "clientName", "displayName", "username") }
+                if (named.isNotBlank()) return named
+            }
+            return clientName(o)
+        }
+
+        fun deliveryAddressOf(o: JSONObject): String {
+            val root = pick(o, "clientAddress", "deliveryAddress", "address", "street")
+            if (root.isNotBlank()) return root
+            for (key in arrayOf("address", "delivery", "client", "appClient")) {
+                val nest = o.optJSONObject(key) ?: continue
+                val n = pick(nest, "clientAddress", "address", "deliveryAddress", "street", "fullAddress")
+                if (n.isNotBlank()) return n
+            }
+            return ""
+        }
+
+        fun extraKindLabel(raw: String): String = when (raw.trim().uppercase()) {
+            "PLATFORM_COVER" -> "Покрытие из комиссии"
+            "CLIENT_SURCHARGE" -> "Доплата клиента"
+            else -> raw.ifBlank { "Доп. продажа" }
+        }
+
+        fun unwrapOperation(o: JSONObject): JSONObject {
+            for (key in arrayOf("item", "operation", "record", "entity")) {
+                val nested = o.optJSONObject(key) ?: continue
+                if (nested.has("orderNumber") || nested.has("orderAmount") || nested.has("status") || nested.has("lineItems")) {
+                    return nested
+                }
+            }
+            val data = o.optJSONObject("data")
+            if (data != null && data.optJSONArray("items") == null && (data.has("orderNumber") || data.has("status") || data.has("lineItems"))) {
+                return data
+            }
+            return o
+        }
+
+        fun normalizeStatusToken(raw: String): String =
+            raw.trim().uppercase(java.util.Locale.ROOT).replace('-', '_').replace(' ', '_')
 
         fun orderNo(o: JSONObject): String = pick(o, "orderNumber", "externalId")
 
@@ -3259,11 +3328,11 @@ class KassaApi(private val baseUrl: String) {
 
         fun needsConfirm(row: JsonRow): Boolean {
             val s = operationStatus(row)
-            if (s == "PENDING_REVIEW" || s == "PENDING") return true
+            if (s.contains("PENDING")) return true
             if (pick(row.raw, "proposalError").isNotBlank()) return false
             val opId = pick(row.raw, "operationId")
-            val statusTo = pick(row.raw, "statusTo")
-            return opId.isBlank() && statusTo.isNotBlank() && !statusTo.equals("GREEN", true)
+            val statusTo = normalizeStatusToken(pick(row.raw, "statusTo"))
+            return opId.isBlank() && statusTo.isNotBlank() && statusTo != "GREEN"
         }
 
         fun needsRetry(row: JsonRow): Boolean {
