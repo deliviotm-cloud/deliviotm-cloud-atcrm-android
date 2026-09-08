@@ -1767,6 +1767,11 @@ class KassaApi(private val baseUrl: String) {
             return if (allowed.size == 1) filtered.filter { it.key.isNotEmpty() } else filtered
         }
 
+        fun cityKeyAllowed(key: String): Boolean {
+            val k = key.trim().lowercase()
+            return k.isEmpty() || k == "ashgabat" || k == "mary"
+        }
+
         fun intakeCityKey(event: JSONObject, pending: JSONObject?): String {
             val raw = pick(pending ?: JSONObject(), "cityKey").ifBlank { pick(event, "cityKey") }.trim().lowercase()
             return if (raw == "mary") "mary" else "ashgabat"

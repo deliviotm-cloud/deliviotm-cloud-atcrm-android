@@ -243,7 +243,7 @@ internal fun SettingsWorkspacePane(
     Column(Modifier.fillMaxSize().background(AtColors.bgDeep)) {
         TopLine("Настройки", onBack, onRefresh = { tick++ })
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
-            SiteSegmented(value = tab, items = allowed, onChange = { tab = it })
+            SiteFilterSelect(value = tab, items = allowed, onChange = { tab = it }, label = "Раздел")
             Text(
                 settingsHint(tab),
                 color = AtColors.muted,

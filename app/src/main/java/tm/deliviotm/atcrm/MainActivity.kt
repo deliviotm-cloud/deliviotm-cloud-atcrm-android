@@ -2107,16 +2107,18 @@ private fun ReportsPane(
                     )
                 }
                 item {
-                    SiteSegmented(
+                    SiteFilterSelect(
                         value = reportTab,
                         items = listOf(
                             "summary" to "Сводка",
                             "orders" to "Заказы",
-                            "cancelled" to "Отмены",
+                            "cancelled" to "Отменённые",
                             "compare" to "Сравнение",
                             "salesCrm" to "CRM продаж",
+                            "profitFinance" to "Фин. отчёт",
                         ),
                         onChange = { reportTab = it },
+                        label = "Раздел",
                     )
                 }
                 item {
@@ -8211,7 +8213,10 @@ private fun OperationsWorkspacePane(
     var tab by remember { mutableStateOf(if (initialTab in listOf("orders", "logistics", "activity")) initialTab else "orders") }
     val today = remember { java.time.LocalDate.now().toString() }
     val storedPreset = remember { prefs.getString("ops_preset", "7d").orEmpty() }
-    var preset by remember { mutableStateOf(storedPreset.ifBlank { "7d" }) }
+    var preset by remember {
+        val raw = storedPreset.ifBlank { "7d" }
+        mutableStateOf(if (raw in listOf("7d", "30d", "month", "custom")) raw else "custom")
+    }
     var dateFrom by remember {
         mutableStateOf(prefs.getString("ops_from", "").orEmpty().ifBlank { java.time.LocalDate.now().minusDays(7).toString() })
     }
@@ -8235,7 +8240,6 @@ private fun OperationsWorkspacePane(
     var refreshing by remember { mutableStateOf(false) }
     var loaded by remember { mutableStateOf(false) }
     var tick by remember { mutableIntStateOf(0) }
-    var filtersOpen by remember { mutableStateOf(false) }
     var creating by remember { mutableStateOf(false) }
     var createBusy by remember { mutableStateOf(false) }
     var pendingConfirm by remember { mutableStateOf<JsonRow?>(null) }
@@ -8254,9 +8258,15 @@ private fun OperationsWorkspacePane(
     fun applyPreset(next: String) {
         preset = next
         if (next == "custom") return
-        val range = KassaApi.dateRange(next)
-        dateFrom = range.first
-        dateTo = range.second
+        val today = java.time.LocalDate.now()
+        if (next == "7d") {
+            dateFrom = today.minusDays(7).toString()
+            dateTo = today.toString()
+        } else {
+            val range = KassaApi.dateRange(if (next == "30d") "30d" else "month")
+            dateFrom = range.first
+            dateTo = range.second
+        }
         page = 1
     }
 
@@ -8276,7 +8286,7 @@ private fun OperationsWorkspacePane(
             runCatching { api.getObject("/sales/establishments/cities", token) }.getOrNull()
         }?.let { o ->
             val parsed = KassaApi.parseCities(o)
-            if (parsed.isNotEmpty()) cities = parsed
+            cities = if (parsed.isNotEmpty()) parsed else KassaApi.opsCityOptions(me)
         }
     }
 
@@ -8315,8 +8325,11 @@ private fun OperationsWorkspacePane(
                 raw to pending
             }
             val pageData = KassaApi.pagedRows(pack.first)
-            rows = pageData.items
-            pendingReview = pack.second.filter { KassaApi.operationStatus(it) == "PENDING_REVIEW" || KassaApi.needsConfirm(it) }
+            rows = pageData.items.filter { KassaApi.cityKeyAllowed(KassaApi.pick(it.raw, "cityKey")) }
+            pendingReview = pack.second.filter {
+                KassaApi.cityKeyAllowed(KassaApi.pick(it.raw, "cityKey")) &&
+                    (KassaApi.operationStatus(it) == "PENDING_REVIEW" || KassaApi.needsConfirm(it))
+            }
             total = pageData.total
             cache?.putRows(KassaApi.opsCacheKey(), (pendingReview + pageData.items).distinctBy { it.id })
             loaded = true
@@ -8390,12 +8403,6 @@ private fun OperationsWorkspacePane(
         else rows.filter { it.id.isBlank() || it.id !in pendingIds }
     }
 
-    fun pendingFor(row: JsonRow): JsonRow? {
-        val num = KassaApi.orderNo(row.raw)
-        if (num.isBlank()) return null
-        return pendingOps.find { KassaApi.orderNo(it.raw) == num }
-    }
-
     val intakeShown = remember(intake, intakePendingOnly, pendingOps) {
         val dedup = LinkedHashMap<String, JsonRow>()
         intake.sortedByDescending { KassaApi.pick(it.raw, "createdAt") }.forEach { row ->
@@ -8406,9 +8413,11 @@ private fun OperationsWorkspacePane(
         val list = dedup.values.toList()
         if (!intakePendingOnly) list
         else list.filter { r ->
-            val pending = pendingFor(r) ?: pendingOps.find { KassaApi.orderNo(it.raw) == KassaApi.orderNo(r.raw) }
-            KassaApi.needsConfirm(r) || KassaApi.needsRetry(r) || (pending != null && KassaApi.operationStatus(pending) == "PENDING_REVIEW") ||
-                KassaApi.pick(r.raw, "proposalError").isNotBlank()
+            val st = KassaApi.pick(r.raw, "status").uppercase()
+            val num = KassaApi.orderNo(r.raw)
+            st.contains("PENDING") ||
+                KassaApi.pick(r.raw, "proposalError").isNotBlank() ||
+                (num.isNotBlank() && pendingOps.any { KassaApi.orderNo(it.raw) == num })
         }
     }
 
@@ -8428,7 +8437,7 @@ private fun OperationsWorkspacePane(
                     SiteSectionHead("Операции", "Список операций с фильтрами, сортировкой и редактированием")
                 }
                 item {
-                    SiteSegmented(
+                    SiteFilterSelect(
                         value = tab,
                         items = buildList {
                             add("orders" to "Заказы")
@@ -8436,6 +8445,7 @@ private fun OperationsWorkspacePane(
                             if (showJournal) add("activity" to "Журнал")
                         },
                         onChange = { tab = it; loaded = tab == "orders" && rows.isNotEmpty() },
+                        label = "Раздел",
                     )
                 }
                 if (err != null) item { ActionBanner(err!!, error = true) }
@@ -8451,52 +8461,36 @@ private fun OperationsWorkspacePane(
                         }
                         item {
                             val confirmedN = rows.count { KassaApi.operationStatus(it) == "CREATED" }
-                            val cancelledN = rows.count { KassaApi.operationStatus(it) == "CANCELLED" }
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                SiteMiniStat("всего", total.toString(), Modifier.weight(1f))
-                                SiteMiniStat("на проверке", pendingReview.size.toString(), Modifier.weight(1f))
-                                SiteMiniStat("подтвержд.", confirmedN.toString(), Modifier.weight(1f))
-                                SiteMiniStat("отмены", cancelledN.toString(), Modifier.weight(1f))
+                            val cancelledN = rows.count { KassaApi.operationStatus(it).contains("CANCEL", ignoreCase = true) }
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    OpsKpi("всего", total.toString(), "стр. $safePage из $pages", Modifier.weight(1f))
+                                    OpsKpi("на проверке", pendingReview.size.toString(), "PENDING_REVIEW", Modifier.weight(1f))
+                                }
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    OpsKpi("подтвержд.", confirmedN.toString(), "на этой странице", Modifier.weight(1f))
+                                    OpsKpi("отмены", cancelledN.toString(), "на этой странице", Modifier.weight(1f))
+                                }
                             }
                         }
                         item {
-                            val statusLabel = when (status) {
-                                "PENDING_REVIEW" -> "На проверке"
-                                "CREATED" -> "Подтверждённые"
-                                "CANCELLED" -> "Отменённые"
-                                else -> "Все заказы"
-                            }
-                            val payLabel = when (pay) {
-                                "CASH" -> "Наличные"
-                                "ONLINE" -> "Онлайн"
-                                "MIXED" -> "Смешанная"
-                                else -> "Любая оплата"
-                            }
-                            val cityLabel = cities.find { it.key == cityKey }?.name ?: "Все города"
-                            val periodLabel = if (preset == "custom") {
-                                "${KassaApi.fmtDay(dateFrom)} — ${KassaApi.fmtDay(dateTo)}"
-                            } else {
-                                KassaApi.dashPeriodLabel(preset)
-                            }
-                            SiteFilterPanel(
-                                open = filtersOpen,
-                                summary = listOf(periodLabel, statusLabel, payLabel, cityLabel).joinToString(" · "),
-                                onToggle = { filtersOpen = !filtersOpen },
+                            Column(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(AtColors.panel)
+                                    .border(1.dp, AtColors.stroke, RoundedCornerShape(16.dp))
+                                    .padding(14.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp),
                             ) {
-                                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                    SitePeriodDropdown(
-                                        preset = preset,
-                                        rangeLabel = KassaApi.periodRangeLabel(preset, dateFrom, dateTo),
-                                        presets = KassaApi.dashPeriodPresets,
-                                        customFrom = dateFrom,
-                                        customTo = dateTo,
-                                        onSelectPreset = { applyPreset(it); page = 1 },
-                                        onApplyCustom = { from, to ->
-                                            dateFrom = from
-                                            dateTo = to
-                                            preset = "custom"
-                                            page = 1
-                                        },
+                                Text("Фильтры", color = AtColors.text, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    SiteFilterSelect(
+                                        value = preset,
+                                        items = listOf("7d" to "7 дней", "30d" to "30 дней", "month" to "Месяц", "custom" to "Свой"),
+                                        onChange = { applyPreset(it) },
+                                        label = "Период",
+                                        modifier = Modifier.weight(1f),
                                     )
                                     SiteFilterSelect(
                                         value = status,
@@ -8508,71 +8502,78 @@ private fun OperationsWorkspacePane(
                                         ),
                                         onChange = { status = it; page = 1 },
                                         label = "Статус",
+                                        modifier = Modifier.weight(1f),
                                     )
+                                }
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                     SiteFilterSelect(
                                         value = pay,
                                         items = listOf("ALL" to "Любая", "CASH" to "Наличные", "ONLINE" to "Онлайн", "MIXED" to "Смешанная"),
                                         onChange = { pay = it; page = 1 },
                                         label = "Оплата",
+                                        modifier = Modifier.weight(1f),
                                     )
                                     SiteFilterSelect(
                                         value = estType,
                                         items = listOf("ALL" to "Все", "RESTAURANT" to "Рестораны", "STORE" to "Магазины"),
                                         onChange = { estType = it; page = 1 },
-                                        label = "Тип заведения",
+                                        label = "Тип",
+                                        modifier = Modifier.weight(1f),
                                     )
-                                    if (cities.size > 1) {
-                                        SiteFilterSelect(
-                                            value = cityKey,
-                                            items = cities.map { it.key to it.name },
-                                            onChange = { cityKey = it; page = 1 },
-                                            label = "Город",
-                                        )
-                                    }
-                                    OutlinedTextField(
-                                        value = qDraft,
-                                        onValueChange = { qDraft = it },
-                                        placeholder = { Text("ID клиента или № заказа (точное совпадение)") },
-                                        singleLine = true,
-                                        modifier = Modifier.fillMaxWidth(),
-                                        colors = fieldColors(),
-                                        shape = RoundedCornerShape(10.dp),
+                                }
+                                if (cities.size > 1) {
+                                    SiteFilterSelect(
+                                        value = cityKey,
+                                        items = cities.map { it.key to it.name },
+                                        onChange = { cityKey = it; page = 1 },
+                                        label = "Город",
                                     )
-                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        InlineActionChip("Найти", filled = true) { q = qDraft.trim(); page = 1; tick++ }
-                                        InlineActionChip("Сброс") {
-                                            qDraft = ""
-                                            q = ""
-                                            status = "ALL"
-                                            pay = "ALL"
-                                            estType = "ALL"
-                                            cityKey = ""
-                                            applyPreset("7d")
-                                            page = 1
-                                            tick++
-                                        }
-                                    }
-                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        SiteFilterSelect(
-                                            value = sortBy,
-                                            items = listOf("orderDatetime" to "Дата заказа", "establishmentName" to "Заведение"),
-                                            onChange = {
-                                                sortBy = it
-                                                sortDir = if (it == "establishmentName") "asc" else "desc"
-                                                page = 1
-                                            },
-                                            label = "Сортировка",
-                                            modifier = Modifier.weight(1f),
-                                        )
-                                        SiteFilterSelect(
-                                            value = sortDir,
-                                            items = listOf("desc" to "Сначала новые", "asc" to "Сначала старые"),
-                                            onChange = { sortDir = it; page = 1 },
-                                            label = "Порядок",
-                                            modifier = Modifier.weight(1f),
-                                        )
+                                }
+                                if (preset == "custom") {
+                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        SiteDateField(dateFrom, { dateFrom = it; page = 1 }, "Дата с", Modifier.weight(1f))
+                                        SiteDateField(dateTo, { dateTo = it; page = 1 }, "Дата по", Modifier.weight(1f))
                                     }
                                 }
+                                OutlinedTextField(
+                                    value = qDraft,
+                                    onValueChange = { qDraft = it },
+                                    placeholder = { Text("ID клиента или № заказа (точное совпадение)") },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = fieldColors(),
+                                    shape = RoundedCornerShape(10.dp),
+                                )
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    InlineActionChip("Найти", filled = true) { q = qDraft.trim(); page = 1; tick++ }
+                                    InlineActionChip("Сброс") {
+                                        qDraft = ""
+                                        q = ""
+                                        status = "ALL"
+                                        pay = "ALL"
+                                        estType = "ALL"
+                                        cityKey = ""
+                                        applyPreset("7d")
+                                        page = 1
+                                        tick++
+                                    }
+                                }
+                                SiteFilterSelect(
+                                    value = sortBy,
+                                    items = listOf("orderDatetime" to "Дата заказа", "establishmentName" to "Заведение"),
+                                    onChange = {
+                                        sortBy = it
+                                        sortDir = if (it == "establishmentName") "asc" else "desc"
+                                        page = 1
+                                    },
+                                    label = "Сортировка",
+                                )
+                                SiteFilterSelect(
+                                    value = sortDir,
+                                    items = listOf("desc" to "По убыванию", "asc" to "По возрастанию"),
+                                    onChange = { sortDir = it; page = 1 },
+                                    label = "Порядок",
+                                )
                             }
                         }
                         if (!loaded && err == null) {
@@ -8595,7 +8596,7 @@ private fun OperationsWorkspacePane(
                                     )
                                 }
                                 items(pinnedPending, key = { "pending-${it.id}" }) { row ->
-                                    OpsOrderCard(row = row, onOpen = { onOpenOp(row) })
+                                    OpsOrderCard(row = row, onOpen = { onOpenOp(row) }, onConfirm = { pendingConfirm = row })
                                 }
                                 if (listRows.isNotEmpty()) {
                                     item {
@@ -8610,7 +8611,7 @@ private fun OperationsWorkspacePane(
                                 }
                             }
                             items(listRows, key = { it.id }) { row ->
-                                OpsOrderCard(row = row, onOpen = { onOpenOp(row) })
+                                OpsOrderCard(row = row, onOpen = { onOpenOp(row) }, onConfirm = { pendingConfirm = row })
                             }
                             item {
                                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -8688,7 +8689,7 @@ private fun OperationsWorkspacePane(
                                 value = activityKind,
                                 items = listOf("ALL" to "Все", "VIEWS" to "Входы", "EDITS" to "Изменения", "CANCELS" to "Отмены"),
                                 onChange = { activityKind = it },
-                                label = "Тип события",
+                                label = "Тип записи",
                             )
                         }
                         item {
@@ -8795,7 +8796,22 @@ private fun OperationsWorkspacePane(
 }
 
 @Composable
-private fun OpsOrderCard(row: JsonRow, onOpen: () -> Unit) {
+private fun OpsKpi(label: String, value: String, extra: String, modifier: Modifier = Modifier) {
+    Column(
+        modifier
+            .clip(RoundedCornerShape(14.dp))
+            .background(AtColors.panel)
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(label, color = AtColors.muted, fontSize = 12.sp)
+        Text(value, color = AtColors.text, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+        Text(extra, color = AtColors.muted, fontSize = 11.sp)
+    }
+}
+
+@Composable
+private fun OpsOrderCard(row: JsonRow, onOpen: () -> Unit, onConfirm: () -> Unit = {}) {
     val ctx = LocalContext.current
     val o = row.raw
     val status = KassaApi.operationStatus(row)
@@ -8835,12 +8851,12 @@ private fun OpsOrderCard(row: JsonRow, onOpen: () -> Unit) {
             color = AtColors.muted,
             fontSize = 12.sp,
         )
-        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            MoneyChip("Без дост.", KassaApi.tmt(without))
-            MoneyChip("Доставка", KassaApi.tmt(delivery))
-            MoneyChip("С дост.", KassaApi.tmt(with))
-            if (commission > 0) MoneyChip("Комис.", KassaApi.tmt(commission))
-            MoneyChip("К выплате", KassaApi.tmt(payout))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            MoneyChip("Без дост.", KassaApi.tmt(without), Modifier.weight(1f))
+            MoneyChip("Доставка", KassaApi.tmt(delivery), Modifier.weight(1f))
+            MoneyChip("С дост.", KassaApi.tmt(with), Modifier.weight(1f))
+            MoneyChip("Комис.", KassaApi.tmt(commission), Modifier.weight(1f))
+            MoneyChip("К выплате", KassaApi.tmt(payout), Modifier.weight(1f))
         }
         val extras = buildList {
             if (loyalty > 0) add("Лояльность: ${KassaApi.prettyNumber(loyalty.toString())}%")
@@ -8848,7 +8864,20 @@ private fun OpsOrderCard(row: JsonRow, onOpen: () -> Unit) {
             if (free) add("Беспл. дост.: ${KassaApi.tmt(KassaApi.opMoney(o, "platformDeliveryCompensation", "deliveryAmount"))}")
         }
         if (extras.isNotEmpty()) Text(extras.joinToString(" · "), color = AtColors.accent, fontSize = 12.sp)
-        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (KassaApi.needsConfirm(row)) {
+                Box(
+                    Modifier
+                        .height(28.dp)
+                        .clip(chipRadius)
+                        .background(AtColors.success)
+                        .clickable(onClick = onConfirm)
+                        .padding(horizontal = 12.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text("Подтвердить", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                }
+            }
             InlineActionChip("Копировать №") {
                 DeviceIntents.copy(ctx, orderNo)
                 Haptics.tap(ctx)
@@ -8859,9 +8888,9 @@ private fun OpsOrderCard(row: JsonRow, onOpen: () -> Unit) {
 }
 
 @Composable
-private fun MoneyChip(label: String, value: String) {
+private fun MoneyChip(label: String, value: String, modifier: Modifier = Modifier) {
     Column(
-        Modifier.clip(RoundedCornerShape(10.dp)).background(AtColors.glass).padding(horizontal = 10.dp, vertical = 6.dp),
+        modifier.clip(RoundedCornerShape(8.dp)).background(AtColors.glass).padding(horizontal = 6.dp, vertical = 5.dp),
     ) {
         Text(label, color = AtColors.muted, fontSize = 10.sp)
         Text(value, color = AtColors.text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)

@@ -92,7 +92,7 @@ internal fun siteDrawerSections(modules: List<ModuleSpec>, navOrder: List<String
             listOfNotNull(
                 find("/workspace/tasks")?.let { DrawerItem("Задачи", "Срок, канбан, проверка", it, icon = "✓", navTo = "/tasks") },
                 find("/operations")?.takeIf { !it.path.contains("logistics") && !it.path.contains("activity") }
-                    ?.let { DrawerItem("Операции", "Заказы за 30 дней", it, icon = "☰", navTo = "/operations") },
+                    ?.let { DrawerItem("Операции", "Заказы за период", it, icon = "☰", navTo = "/operations") },
                 find("/problem-orders")?.let { DrawerItem("Проблемные заказы", "Задержки по точкам", it, icon = "!", navTo = "/problem-orders") },
                 find("/sales/establishments")?.let { DrawerItem("Отдел продаж", "Воронка, Excel, SMS", it, icon = "◎", navTo = "/sales") },
                 find("/courier-fleet/couriers")?.let { DrawerItem("Курьеры", "Флот, доставки, зарплата", it, icon = "›", navTo = "/couriers") },

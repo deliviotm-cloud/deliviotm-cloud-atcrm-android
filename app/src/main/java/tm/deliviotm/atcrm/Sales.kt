@@ -287,10 +287,33 @@ internal fun SalesWorkspacePane(
             LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 item { SiteSectionHead("Отдел продаж", "CRM заведений: воронка, импорт/экспорт Excel, SMS") }
                 item {
-                    SiteSegmented(
-                        value = tab,
-                        items = listOf("establishments" to "Заведения", "sms" to "SMS рассылка", "cities" to "Города"),
-                        onChange = { tab = it; skip = 0 },
+                    val section = when {
+                        tab == "sms" -> "sms"
+                        tab == "cities" -> "cities"
+                        kind == "SHOP" -> "shops"
+                        kind == "RESTAURANT" -> "restaurants"
+                        else -> "establishments"
+                    }
+                    SiteFilterSelect(
+                        value = section,
+                        items = listOf(
+                            "establishments" to "Заведения",
+                            "sms" to "SMS рассылка",
+                            "shops" to "Магазины",
+                            "restaurants" to "Рестораны",
+                            "cities" to "Города",
+                        ),
+                        onChange = {
+                            when (it) {
+                                "sms" -> { tab = "sms" }
+                                "cities" -> { tab = "cities" }
+                                "shops" -> { tab = "establishments"; kind = "SHOP" }
+                                "restaurants" -> { tab = "establishments"; kind = "RESTAURANT" }
+                                else -> { tab = "establishments"; kind = "ALL" }
+                            }
+                            skip = 0
+                        },
+                        label = "Раздел",
                     )
                 }
                 if (err != null) item { ActionBanner(err!!, error = true) }
@@ -298,13 +321,6 @@ internal fun SalesWorkspacePane(
                 if (!loaded && err == null) item { LoadingCard() }
 
                 if (tab == "establishments") {
-                    item {
-                        SiteSegmented(
-                            value = kind,
-                            items = listOf("ALL" to "Все", "SHOP" to "Магазины", "RESTAURANT" to "Рестораны"),
-                            onChange = { kind = it; skip = 0 },
-                        )
-                    }
                     item {
                         OutlinedTextField(qDraft, { qDraft = it }, label = { Text("Поиск") }, singleLine = true, modifier = Modifier.fillMaxWidth(), colors = fieldColors())
                     }

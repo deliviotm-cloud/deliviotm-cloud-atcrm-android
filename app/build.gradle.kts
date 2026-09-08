@@ -11,7 +11,7 @@ android {
         applicationId = "tm.deliviotm.atcrm"
         minSdk = 26
         targetSdk = 35
-        versionCode = 233
+        versionCode = 234
         versionName = "1.6.69"
         buildConfigField("String", "API_BASE", "\"https://crm.deliviotm.com/api\"")
         buildConfigField("String", "API_BASE_PROD", "\"https://crm.deliviotm.com/api\"")
