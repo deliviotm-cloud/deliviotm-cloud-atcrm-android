@@ -13,8 +13,10 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -55,6 +57,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -399,27 +402,17 @@ internal fun SiteTopBar(
             SiteThemeToggle()
             Spacer(Modifier.width(4.dp))
             Box(
-                Modifier.size(32.dp).clip(CircleShape).clickable(onClick = onBell),
+                Modifier.size(32.dp).clickable(onClick = onBell),
                 contentAlignment = Alignment.Center,
             ) {
                 Text("🔔", fontSize = 14.sp)
-                if (bellCount > 0) {
-                    Box(
-                        Modifier
-                            .align(Alignment.TopEnd)
-                            .size(14.dp)
-                            .clip(CircleShape)
-                            .background(AtColors.danger),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            if (bellCount > 9) "9+" else bellCount.toString(),
-                            color = Color.White,
-                            fontSize = 8.sp,
-                            fontWeight = FontWeight.Bold,
-                        )
-                    }
-                }
+                CountBadge(
+                    count = bellCount,
+                    compact = true,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .offset(x = 6.dp, y = (-4).dp),
+                )
             }
             Spacer(Modifier.width(4.dp))
             Box(
@@ -439,6 +432,28 @@ internal fun SiteTopBar(
         }
         HorizontalDivider(color = AtColors.stroke, modifier = Modifier.padding(top = 4.dp))
     }
+}
+
+@Composable
+private fun CountBadge(
+    count: Int,
+    compact: Boolean = false,
+    modifier: Modifier = Modifier,
+) {
+    if (count <= 0) return
+    val min = if (compact) 16.dp else 22.dp
+    Text(
+        if (count > 99) "99+" else count.toString(),
+        color = Color.White,
+        fontSize = if (compact) 9.sp else 11.sp,
+        fontWeight = FontWeight.Bold,
+        textAlign = TextAlign.Center,
+        maxLines = 1,
+        modifier = modifier
+            .defaultMinSize(minWidth = min, minHeight = min)
+            .background(AtColors.danger, RoundedCornerShape(999.dp))
+            .padding(horizontal = if (compact) 4.dp else 6.dp, vertical = 1.dp),
+    )
 }
 
 @Composable
