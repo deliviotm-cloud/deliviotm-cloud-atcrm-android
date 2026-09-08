@@ -2,6 +2,7 @@ package tm.deliviotm.atcrm
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -342,14 +343,20 @@ private fun ActivityKpiCard(title: String, value: String, hint: String, modifier
 
 @Composable
 private fun DualActivityBars(title: String, labelA: String, labelB: String, rows: List<ActivityRow>) {
-    val maxVal = rows.maxOfOrNull { max(it.ordersA, it.ordersB) }?.coerceAtLeast(1) ?: 1
+    var showEmpty by remember { mutableStateOf(false) }
+    val visible = if (showEmpty) rows else rows.filter { it.ordersA + it.ordersB > 0 }
+    val hidden = rows.size - visible.size
+    val maxVal = visible.maxOfOrNull { max(it.ordersA, it.ordersB) }?.coerceAtLeast(1) ?: 1
     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(AtColors.glass).padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(title, color = AtColors.text, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
             LegendDot(periodBlue, labelA, Modifier.weight(1f))
             LegendDot(periodGreen, labelB, Modifier.weight(1f))
         }
-        rows.forEach { row ->
+        if (visible.isEmpty()) {
+            Text("В выбранных периодах нет заказов в этих часах.", color = AtColors.muted, fontSize = 13.sp)
+        }
+        visible.forEach { row ->
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
                     row.rowLabel,
@@ -368,6 +375,15 @@ private fun DualActivityBars(title: String, labelA: String, labelB: String, rows
                     Text(row.ordersB.toString(), color = periodGreen, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
             }
+        }
+        if (hidden > 0 || showEmpty) {
+            Text(
+                if (showEmpty) "Только часы с заказами" else "Пустые часы · $hidden",
+                color = AtColors.accent,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.clickable { showEmpty = !showEmpty },
+            )
         }
     }
 }

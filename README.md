@@ -4,7 +4,7 @@
 Пакет / bundle: `tm.deliviotm.atcrm`.  
 API по умолчанию: `https://crm.deliviotm.com/api`.
 
-Текущая версия в репозитории: **1.6.44** (`versionCode` / build 204).
+Текущая версия в репозитории: **1.6.69** (`versionCode` / build 230).
 
 ## Ссылка для агентов (Android и iOS)
 
@@ -35,7 +35,7 @@ echo "sdk.dir=$ANDROID_HOME" > local.properties
 ./gradlew assembleDebug
 ```
 
-APK: `app/build/outputs/apk/debug/ATCRM-<versionName>.apk` (например `ATCRM-1.6.42.apk`).
+APK: `app/build/outputs/apk/debug/ATCRM-<versionName>.apk` (например `ATCRM-1.6.69.apk`).
 
 Firebase Cloud Messaging в клиент не входит, пока нет `google-services.json` (этот файл в Git не кладём).
 

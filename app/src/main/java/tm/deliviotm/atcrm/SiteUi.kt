@@ -38,10 +38,15 @@ import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
@@ -49,7 +54,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.LineHeightStyle
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -83,7 +92,7 @@ internal fun siteDrawerSections(modules: List<ModuleSpec>, navOrder: List<String
             listOfNotNull(
                 find("/workspace/tasks")?.let { DrawerItem("Задачи", "Срок, канбан, проверка", it, icon = "✓", navTo = "/tasks") },
                 find("/operations")?.takeIf { !it.path.contains("logistics") && !it.path.contains("activity") }
-                    ?.let { DrawerItem("Операции", "Заказы за 30 дней", it, icon = "☰", navTo = "/operations") },
+                    ?.let { DrawerItem("Операции", "Заказы за период", it, icon = "☰", navTo = "/operations") },
                 find("/problem-orders")?.let { DrawerItem("Проблемные заказы", "Задержки по точкам", it, icon = "!", navTo = "/problem-orders") },
                 find("/sales/establishments")?.let { DrawerItem("Отдел продаж", "Воронка, Excel, SMS", it, icon = "◎", navTo = "/sales") },
                 find("/courier-fleet/couriers")?.let { DrawerItem("Курьеры", "Флот, доставки, зарплата", it, icon = "›", navTo = "/couriers") },
@@ -275,8 +284,30 @@ internal fun CrmShell(
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     val ctx = LocalContext.current
-    val navOrder = NavOrderStore.load(ctx)
+    var navTick by remember { mutableIntStateOf(0) }
+    val navOrder = remember(navTick) { NavOrderStore.load(ctx) }
     val sections = remember(modules, navOrder) { siteDrawerSections(modules, navOrder) }
+    DisposableEffect(ctx) {
+        val prefs = ctx.getSharedPreferences("atcrm", android.content.Context.MODE_PRIVATE)
+        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == NavOrderStore.KEY) navTick++
+        }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
+    LaunchedEffect(token, user?.id) {
+        val t = token ?: return@LaunchedEffect
+        val a = api ?: return@LaunchedEffect
+        withContext(Dispatchers.IO) { NavOrderStore.sync(ctx, a, t, user?.navOrderPaths.orEmpty()) }
+        navTick++
+    }
+    LaunchedEffect(drawerState.currentValue) {
+        if (drawerState.currentValue != DrawerValue.Open) return@LaunchedEffect
+        val t = token ?: return@LaunchedEffect
+        val a = api ?: return@LaunchedEffect
+        withContext(Dispatchers.IO) { NavOrderStore.sync(ctx, a, t) }
+        navTick++
+    }
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
@@ -366,35 +397,32 @@ internal fun SiteTopBar(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text("⌕  ", color = AtColors.muted, fontSize = 14.sp)
-                Text("Поиск по разделам, клиентам, задачам…", color = AtColors.muted, fontSize = 13.sp, maxLines = 1)
+                Text(
+                    "Поиск по разделам, клиентам, задачам…",
+                    color = AtColors.muted,
+                    fontSize = 13.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
             }
             Spacer(Modifier.width(8.dp))
             SiteThemeToggle()
-            Spacer(Modifier.width(4.dp))
+            Spacer(Modifier.width(8.dp))
             Box(
-                Modifier.size(32.dp).clip(CircleShape).clickable(onClick = onBell),
+                Modifier.size(36.dp).clickable(onClick = onBell),
                 contentAlignment = Alignment.Center,
             ) {
-                Text("🔔", fontSize = 14.sp)
-                if (bellCount > 0) {
-                    Box(
-                        Modifier
-                            .align(Alignment.TopEnd)
-                            .size(14.dp)
-                            .clip(CircleShape)
-                            .background(AtColors.danger),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            if (bellCount > 9) "9+" else bellCount.toString(),
-                            color = Color.White,
-                            fontSize = 8.sp,
-                            fontWeight = FontWeight.Bold,
-                        )
-                    }
-                }
+                Text("🔔", fontSize = 16.sp)
+                CountBadge(
+                    count = bellCount,
+                    compact = true,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(1.dp),
+                )
             }
-            Spacer(Modifier.width(4.dp))
+            Spacer(Modifier.width(8.dp))
             Box(
                 Modifier
                     .clip(CircleShape)
@@ -411,6 +439,40 @@ internal fun SiteTopBar(
             Spacer(Modifier.width(6.dp))
         }
         HorizontalDivider(color = AtColors.stroke, modifier = Modifier.padding(top = 4.dp))
+    }
+}
+
+@Composable
+private fun CountBadge(
+    count: Int,
+    compact: Boolean = false,
+    modifier: Modifier = Modifier,
+) {
+    if (count <= 0) return
+    val side = if (compact) 16.dp else 22.dp
+    Box(
+        modifier
+            .size(side)
+            .clip(CircleShape)
+            .background(AtColors.danger),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            if (count > 99) "99+" else count.toString(),
+            color = Color.White,
+            fontSize = if (compact) 8.sp else 11.sp,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            lineHeight = if (compact) 8.sp else 11.sp,
+            style = TextStyle(
+                platformStyle = PlatformTextStyle(includeFontPadding = false),
+                lineHeightStyle = LineHeightStyle(
+                    alignment = LineHeightStyle.Alignment.Center,
+                    trim = LineHeightStyle.Trim.Both,
+                ),
+            ),
+        )
     }
 }
 

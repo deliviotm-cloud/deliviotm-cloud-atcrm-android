@@ -22,6 +22,7 @@ data class AppUser(
     val avatarUrl: String = "",
     val phone: String = "",
     val email: String = "",
+    val navOrderPaths: List<String> = emptyList(),
 )
 
 data class IntakeTone(
@@ -1687,12 +1688,13 @@ class KassaApi(private val baseUrl: String) {
             val size = pageSize.coerceIn(25, 500)
             val pg = page.coerceAtLeast(1)
             val pay = paymentType.ifBlank { "ALL" }
-            val st = status.ifBlank { "CREATED" }
+            val st = status.ifBlank { "ALL" }
             val q = StringBuilder(
                 "/operations?dateFrom=${enc(isoDayStart(dateFrom))}&dateTo=${enc(isoDayEnd(dateTo))}" +
-                    "&page=$pg&pageSize=$size&paymentType=${enc(pay)}&status=${enc(st)}" +
+                    "&page=$pg&pageSize=$size&paymentType=${enc(pay)}" +
                     "&sortBy=${enc(sortBy.ifBlank { "orderDatetime" })}&sortDir=${enc(sortDir.ifBlank { "desc" })}",
             )
+            if (st != "ALL") q.append("&status=${enc(st)}")
             if (establishmentType.isNotBlank() && establishmentType != "ALL") {
                 q.append("&establishmentType=${enc(establishmentType)}")
             }
@@ -1763,6 +1765,11 @@ class KassaApi(private val baseUrl: String) {
             if (allowed.isEmpty()) return all
             val filtered = all.filter { it.key.isEmpty() || allowed.contains(it.key) }
             return if (allowed.size == 1) filtered.filter { it.key.isNotEmpty() } else filtered
+        }
+
+        fun cityKeyAllowed(key: String): Boolean {
+            val k = key.trim().lowercase()
+            return k.isEmpty() || k == "ashgabat" || k == "mary"
         }
 
         fun intakeCityKey(event: JSONObject, pending: JSONObject?): String {
@@ -2214,6 +2221,34 @@ class KassaApi(private val baseUrl: String) {
             }
         }
 
+        fun isMarketingWorkspace(path: String, tab: String = ""): Boolean {
+            if (tab.equals("marketing", true)) return true
+            val c = path.substringBefore("?").trimEnd('/')
+            return c.startsWith("/clients") ||
+                c.startsWith("/marketing") ||
+                c.startsWith("/qr") ||
+                c.contains("client-portraits") ||
+                c.startsWith("/push/logs")
+        }
+
+        fun marketingTabFromPath(path: String, title: String = ""): String {
+            val c = path.substringBefore("?").lowercase()
+            val t = title.trim()
+            return when {
+                t == "Портреты" || c.contains("client-portraits") -> "portraits"
+                t == "SMS" || c.contains("/sms/broadcast") -> "sms"
+                t == "Push" || c.startsWith("/push/logs") -> "push"
+                t.contains("Календарь") || c.contains("push-calendar") -> "calendar"
+                t == "Контент" || c.contains("content-plan") -> "content"
+                t.contains("Баннер") || c.contains("banner") -> "banners"
+                t.contains("Реклам") || c.contains("/ads") -> "ads"
+                t.contains("Промо") || c.contains("promo") -> "promos"
+                t == "QR" || c.startsWith("/qr") -> "qr"
+                t.contains("Мессенджер") || c.contains("telegram") -> "messengers"
+                else -> "clients"
+            }
+        }
+
         fun isSalesWorkspace(path: String, tab: String = ""): Boolean {
             if (tab.equals("settings", true)) return false
             val c = path.substringBefore("?").trimEnd('/')
@@ -2433,10 +2468,11 @@ class KassaApi(private val baseUrl: String) {
                 "&paymentType=ALL&establishmentType=ALL&dateBasis=business"
         }
 
-        fun logisticsIntakePath(pageSize: Int = 200, transition: String = "ALL", cityKey: String = ""): String {
+        fun logisticsIntakePath(pageSize: Int = 200, transition: String = "ALL", cityKey: String = "", search: String = ""): String {
             val size = pageSize.coerceIn(20, 200)
             val q = StringBuilder("/operations/logistics-intake?take=$size&skip=0&transition=${enc(transition.ifBlank { "ALL" })}")
             if (cityKey.isNotBlank()) q.append("&cityKey=${enc(cityKey)}")
+            if (search.isNotBlank()) q.append("&search=${enc(search.trim())}")
             return q.toString()
         }
 
@@ -2692,7 +2728,7 @@ class KassaApi(private val baseUrl: String) {
                 o.opt("data") is JSONArray -> o.getJSONArray("data")
                 else -> return null
             }
-            if (arr.length() == 0) return emptyList()
+            if (arr.length() == 0) return null
             val first = arr.optJSONObject(0) ?: return null
             val looks = first.has("text") || first.has("body") || first.has("content") ||
                 first.has("message") || first.has("html") || first.has("imageUrl") ||
@@ -2931,16 +2967,129 @@ class KassaApi(private val baseUrl: String) {
             return out
         }
 
+        private fun jsonScalar(v: Any?): String {
+            if (v == null || v === JSONObject.NULL) return ""
+            return when (v) {
+                is JSONObject -> {
+                    for (k in arrayOf("code", "value", "status", "name", "label", "text", "id", "uuid")) {
+                        if (!v.has(k) || v.isNull(k)) continue
+                        val inner = v.opt(k)
+                        if (inner is JSONObject || inner is JSONArray) continue
+                        val s = inner?.toString()?.trim().orEmpty()
+                        if (s.isNotBlank() && s != "null") return s
+                    }
+                    ""
+                }
+                is JSONArray -> if (v.length() == 0) "" else jsonScalar(v.opt(0))
+                is Number, is Boolean -> v.toString()
+                else -> v.toString().trim()
+            }
+        }
+
         fun pick(o: JSONObject?, vararg keys: String): String {
             if (o == null) return ""
             for (k in keys) {
-                val s = o.opt(k)?.toString()?.trim().orEmpty()
+                if (!o.has(k) || o.isNull(k)) continue
+                val s = jsonScalar(o.opt(k))
                 if (s.isNotBlank() && s != "null") return s
             }
             return ""
         }
 
         fun pickOrEmpty(o: JSONObject?, vararg keys: String): String = pick(o, *keys)
+
+        fun fieldLabel(key: String): String {
+            val raw = key.substringAfterLast('.')
+            return when (raw) {
+                "fullName", "name" -> "ФИО"
+                "phone", "mobile" -> "Телефон"
+                "city", "cityKey" -> "Город"
+                "isActive" -> "Активен"
+                "activityRating" -> "Оценка активности"
+                "delivioRating" -> "Оценка Delivio"
+                "delivioId" -> "ID в Delivio"
+                "deliveriesMonth" -> "Доставок за месяц"
+                "deliveriesTotal", "deliveries", "trips" -> "Доставок всего"
+                "monthlySalary", "salary" -> "Оклад"
+                "statsMonth", "period", "month" -> "Период"
+                "amount", "total", "payroll" -> "Сумма"
+                "orderNumber" -> "№ заказа"
+                "address", "deliveryAddress" -> "Адрес"
+                "status", "state" -> "Статус"
+                "courierName", "courier" -> "Курьер"
+                "establishmentName" -> "Заведение"
+                "delivioSyncedAt" -> "Синхронизация Delivio"
+                "createdAt" -> "Создан"
+                "updatedAt" -> "Обновлён"
+                "deliveredAt" -> "Доставлен"
+                "paidAt" -> "Выплачено"
+                "id" -> "ID"
+                "email" -> "Email"
+                "segment" -> "Сегмент"
+                "kind", "type" -> "Тип"
+                "ordersCount", "orderCount", "totalOrders" -> "Заказов"
+                "score" -> "Оценка"
+                "priority" -> "Приоритет"
+                "impact" -> "Влияние"
+                "insight", "recommendation" -> "Инсайт"
+                "text", "body", "description", "message" -> "Текст"
+                "campaign", "campaignName" -> "Кампания"
+                "channel" -> "Канал"
+                "audience" -> "Аудитория"
+                "code", "promoCode" -> "Промокод"
+                "discount", "discountPercent", "percent" -> "Скидка"
+                "discountAmount", "totalDiscount", "discountSum", "savedAmount", "totalAmount" -> "Сумма скидок"
+                "usageLimit", "maxUses" -> "Лимит"
+                "usedCount", "usageCount", "uses", "timesUsed", "redemptionsCount", "appliedCount", "totalUses" -> "Использований"
+                "uniqueClients", "uniqueUsers", "clientsCount", "uniqueCount", "distinctClients" -> "Уник. клиентов"
+                "lastUsedAt", "lastUsed", "lastAppliedAt" -> "Последнее исп."
+                "startsAt", "validFrom" -> "С"
+                "active" -> "Активен"
+                "qr", "qrValue", "payload" -> "QR"
+                "url", "link", "target" -> "Ссылка"
+                "banner", "bannerTitle" -> "Баннер"
+                "scheduledAt" -> "Запланирован"
+                "sentAt" -> "Отправлен"
+                "publishAt" -> "Публикация"
+                "expiresAt", "validTo", "endsAt" -> "Срок"
+                "connectedAt" -> "Подключён"
+                else -> raw.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
+            }
+        }
+
+        fun formatFieldValue(key: String, value: String, src: JSONObject? = null): String {
+            val raw = key.substringAfterLast('.')
+            if (value.equals("true", true)) return "да"
+            if (value.equals("false", true)) return "нет"
+            if (raw == "status" || raw == "state") return prettyStatus(value).ifBlank { value }
+            if (raw == "city" || raw == "cityKey") {
+                return when (value.lowercase()) {
+                    "ashgabat" -> "Ашхабад"
+                    "mary" -> "Мары"
+                    else -> value
+                }
+            }
+            if (
+                raw.endsWith("At") || raw.contains("Date", true) || raw.contains("Time", true) ||
+                (value.contains('T') && (value.contains('Z') || value.contains('+')))
+            ) {
+                val t = prettyTime(value)
+                if (t.isNotBlank()) return t
+            }
+            if (raw in listOf("monthlySalary", "salary", "amount", "total", "payroll", "totalDiscount", "discountSum", "savedAmount", "totalAmount", "discountAmount")) {
+                val n = src?.let { jsonNum(it, raw) } ?: value.replace(" ", "").replace(',', '.').toDoubleOrNull()
+                if (n != null && n > 0) return tmt(n)
+            }
+            if (raw in listOf("discount", "discountPercent", "percent")) {
+                val n = src?.let { jsonNum(it, raw) } ?: value.replace(" ", "").replace(',', '.').toDoubleOrNull()
+                if (n != null && n > 0) return "${prettyNumber(n.toString())}%"
+            }
+            if (raw in listOf("usedCount", "usageCount", "uses", "timesUsed", "redemptionsCount", "appliedCount", "totalUses", "uniqueClients", "uniqueUsers", "clientsCount", "uniqueCount", "distinctClients", "ordersCount", "orderCount", "totalOrders", "usageLimit", "maxUses")) {
+                val n = src?.let { jsonNumOpt(it, raw) } ?: value.replace(" ", "").replace(',', '.').toDoubleOrNull()
+                if (n != null) return prettyNumber(n.toString())
+            }
+            return value
+        }
 
         fun phoneOf(o: JSONObject): String {
             val raw = pick(
@@ -2999,7 +3148,7 @@ class KassaApi(private val baseUrl: String) {
         }
 
         fun operationStatus(row: JsonRow): String =
-            pick(row.raw, "status", "state").trim().uppercase()
+            normalizeStatusToken(pick(row.raw, "status", "orderStatus", "state", "statusCode"))
 
         fun establishmentName(o: JSONObject): String {
             o.optJSONObject("establishment")?.let { nested ->
@@ -3018,6 +3167,54 @@ class KassaApi(private val baseUrl: String) {
             }
             return ""
         }
+
+        fun clientDisplayName(o: JSONObject): String {
+            val firstLast = listOf(pick(o, "firstName"), pick(o, "lastName")).filter { it.isNotBlank() }.joinToString(" ")
+            if (firstLast.isNotBlank()) return firstLast
+            val root = pick(o, "clientName", "customerName", "contactName", "fullName", "displayName")
+            if (root.isNotBlank() && root != pick(o, "orderNumber", "externalId")) return root
+            for (key in arrayOf("client", "customer", "appClient", "appUser")) {
+                val nest = o.optJSONObject(key) ?: continue
+                val named = listOf(pick(nest, "firstName"), pick(nest, "lastName")).filter { it.isNotBlank() }.joinToString(" ")
+                    .ifBlank { pick(nest, "fullName", "name", "clientName", "displayName", "username") }
+                if (named.isNotBlank()) return named
+            }
+            return clientName(o)
+        }
+
+        fun deliveryAddressOf(o: JSONObject): String {
+            val root = pick(o, "clientAddress", "deliveryAddress", "address", "street")
+            if (root.isNotBlank()) return root
+            for (key in arrayOf("address", "delivery", "client", "appClient")) {
+                val nest = o.optJSONObject(key) ?: continue
+                val n = pick(nest, "clientAddress", "address", "deliveryAddress", "street", "fullAddress")
+                if (n.isNotBlank()) return n
+            }
+            return ""
+        }
+
+        fun extraKindLabel(raw: String): String = when (raw.trim().uppercase()) {
+            "PLATFORM_COVER" -> "Покрытие из комиссии"
+            "CLIENT_SURCHARGE" -> "Доплата клиента"
+            else -> raw.ifBlank { "Доп. продажа" }
+        }
+
+        fun unwrapOperation(o: JSONObject): JSONObject {
+            for (key in arrayOf("item", "operation", "record", "entity")) {
+                val nested = o.optJSONObject(key) ?: continue
+                if (nested.has("orderNumber") || nested.has("orderAmount") || nested.has("status") || nested.has("lineItems")) {
+                    return nested
+                }
+            }
+            val data = o.optJSONObject("data")
+            if (data != null && data.optJSONArray("items") == null && (data.has("orderNumber") || data.has("status") || data.has("lineItems"))) {
+                return data
+            }
+            return o
+        }
+
+        fun normalizeStatusToken(raw: String): String =
+            raw.trim().uppercase(java.util.Locale.ROOT).replace('-', '_').replace(' ', '_')
 
         fun orderNo(o: JSONObject): String = pick(o, "orderNumber", "externalId")
 
@@ -3131,11 +3328,11 @@ class KassaApi(private val baseUrl: String) {
 
         fun needsConfirm(row: JsonRow): Boolean {
             val s = operationStatus(row)
-            if (s == "PENDING_REVIEW" || s == "PENDING") return true
+            if (s.contains("PENDING")) return true
             if (pick(row.raw, "proposalError").isNotBlank()) return false
             val opId = pick(row.raw, "operationId")
-            val statusTo = pick(row.raw, "statusTo")
-            return opId.isBlank() && statusTo.isNotBlank() && !statusTo.equals("GREEN", true)
+            val statusTo = normalizeStatusToken(pick(row.raw, "statusTo"))
+            return opId.isBlank() && statusTo.isNotBlank() && statusTo != "GREEN"
         }
 
         fun needsRetry(row: JsonRow): Boolean {
@@ -3651,6 +3848,13 @@ class KassaApi(private val baseUrl: String) {
                 avatarUrl = avatarUrlOf(o),
                 phone = pick(o, "phone", "mobile"),
                 email = pick(o, "email", "personalEmail", "mailboxEmail"),
+                navOrderPaths = buildList {
+                    val arr = o.optJSONArray("navOrderPaths")
+                    if (arr != null) for (i in 0 until arr.length()) {
+                        val v = arr.optString(i).trim()
+                        if (v.startsWith("/")) add(v)
+                    }
+                },
             )
         }
 
